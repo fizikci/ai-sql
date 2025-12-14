@@ -1,153 +1,85 @@
-# SQL Client for VS Code
+# SQL with AI — Database Explorer + AI Query Assistant
 
-A comprehensive SQL Client extension for Visual Studio Code that supports SQL Server, PostgreSQL, and MySQL databases.
+Explore your databases, understand schemas quickly, and turn natural language into runnable SQL — right inside VS Code.
 
-## Features
+**SQL with AI** is a lightweight SQL client for **SQL Server**, **PostgreSQL**, and **MySQL** with an AI assistant that uses the *currently selected database schema* (including **PK/FK relationships**) to generate accurate queries.
 
-### 🔌 Multi-Database Support
-- **SQL Server** - Full support for Microsoft SQL Server
-- **PostgreSQL** - Complete PostgreSQL integration
-- **MySQL** - MySQL and MariaDB compatibility
+## Why you’ll love it
 
-### 🌲 Tree View Explorer
-- Visual database explorer in the sidebar
-- Browse connections, databases, tables, views, procedures, and functions
-- Expand tables to see:
-  - Columns with data types
-  - Indexes
-  - Constraints (Primary Keys, Foreign Keys, Unique, Check)
+- **One-click SQL Explorer**: Connections → databases → tables/views/procs/functions
+- **Schema-aware AI**: ask questions like “number of orders by product last month” and get executable SQL
+- **Context follows you**: selection in the explorer becomes the AI’s context automatically
+- **Fast results viewer**: pretty grid, execution time, NULL highlighting
 
-### 📝 Query Editor
-- Write and execute SQL queries
-- Syntax highlighting for SQL
-- Execute selected query or entire document
-- View results in a formatted table
+## Screenshots (placeholders)
 
-### 🔧 Connection Management
-- Add multiple database connections
-- Edit connection details
-- Connect/Disconnect from databases
-- Secure password storage
-- Test connections before saving
+> Replace these image paths with your actual screenshots.
 
-### 📊 Data Viewing
-- View table data (top 1000 rows)
-- Formatted result display
-- Execution time tracking
-- Column headers and null value indicators
+### SQL Explorer
 
-## Installation
+![SQL Explorer tree view](resources/screenshot-explorer.png)
 
-1. Install the extension from the VS Code Marketplace (or VSIX file)
-2. Open the SQL Explorer view from the Activity Bar
-3. Click "Add Connection" to get started
+### Ask in plain English → Get SQL → Run
 
-## Usage
+![AI SQL chat assistant](resources/screenshot-ai-chat.png)
+### Query results
 
-### Adding a Connection
+![Query results viewer](resources/screenshot-results.png)
 
-1. Click the **+** icon in the SQL Explorer view
-2. Enter connection details:
-   - Connection name
-   - Database type (SQL Server, PostgreSQL, MySQL)
-   - Host address
-   - Port number
-   - Username
-   - Password
-   - Database name (optional)
-3. Connection will be tested automatically
+## Key features
 
-### Executing Queries
+### 🌲 SQL Explorer
 
-1. Right-click on a connection or database → **New Query**
-2. Write your SQL query
-3. Select the query text (optional - runs entire document if nothing selected)
-4. Click the **Execute** button or press the play icon
-5. Results appear in a new panel
+- Browse **databases**, **tables**, **views**, **procedures**, and **functions**
+- Inspect table details: **columns**, **indexes**, and **constraints**
+- PK/FK relationships are surfaced and used by the AI assistant to join tables correctly
 
-### Browsing Database Objects
+### 🧠 AI SQL Assistant (Copilot-powered)
 
-- Click on connections to expand and view databases
-- Browse Tables, Views, Procedures, and Functions
-- Expand tables to see structure details
-- Right-click on tables to view data or edit structure
+In Copilot Chat, talk to the participant **@ai-sql**:
 
-## Keyboard Shortcuts
+- **Ask for data** (it generates SQL, opens a query editor, and runs it)
+  - “Give me the number of appointments by siteslug”
+  - “Bring product names by number of orders last month”
+- **Ask for understanding** (it explains the database and report ideas)
+  - “Explain this database to me. What kind of useful reports can I get?”
 
-- **Execute Query**: Click the play icon in editor title bar
+The assistant first classifies your intent (query vs metadata question) and responds accordingly.
+
+### 📝 Query editor + execution
+
+- Create a new SQL document from the explorer
+- Run the selected text or the whole file
+- Results show up in a dedicated panel
+
+## Quickstart
+
+1. Open **SQL Explorer** from the Activity Bar
+2. Click **Add Connection**
+3. Connect to your database
+4. Expand **Databases**, pick one, and start:
+   - Right-click → **New Query**
+   - or ask **@ai-sql** a question in Copilot Chat
+
+## What it’s great for
+
+- Quickly onboarding into an unfamiliar database
+- Building one-off reports and sanity checks
+- Exploring PK/FK relationships without leaving the editor
+- Turning business questions into SQL without memorizing table names
 
 ## Requirements
 
-- Visual Studio Code 1.107.0 or higher
-- Network access to your database servers
+- Visual Studio Code (recent versions recommended)
+- Network access to your database
+- For AI features: GitHub Copilot Chat enabled
 
-## Database Drivers
+## Notes & limitations
 
-This extension uses the following npm packages:
-- `mssql` - SQL Server driver
-- `pg` - PostgreSQL driver
-- `mysql2` - MySQL driver
-
-## Extension Settings
-
-Currently, all settings are managed through the connection dialog.
-
-## Known Issues
-
-- Large result sets are limited to 1000 rows in the viewer
-- Some advanced SQL Server features may require additional configuration
-
-## Roadmap
-
-- [ ] Export query results to CSV/JSON
-- [ ] Query history
-- [ ] Autocomplete for SQL keywords and table names
-- [ ] Schema comparison tools
-- [ ] Database diagram viewer
-- [ ] Multiple query result tabs
-- [ ] Dark/Light theme support for result viewer
-
-## Development
-
-### Building from Source
-
-```bash
-npm install
-npm run compile
-```
-
-### Running in Debug Mode
-
-1. Press F5 to open Extension Development Host
-2. The extension will be loaded in the new window
-
-### Running Tests
-
-```bash
-npm test
-```
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit issues or pull requests.
+- The results grid shows up to **1000 rows** for performance.
+- If your schema is very large, the AI assistant summarizes it (it’s optimized for accuracy, not dumping everything).
 
 ## License
 
 [MIT](LICENSE)
-
-## Release Notes
-
-### 0.0.1
-
-Initial release:
-- Multi-database support (SQL Server, PostgreSQL, MySQL)
-- Tree view explorer
-- Query editor with execution
-- Connection management
-- Table data viewing
-- Database object browsing
-
----
-
-**Enjoy using SQL Client!**
 
