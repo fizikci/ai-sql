@@ -49,11 +49,13 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode> {
 
         switch (element.contextValue) {
             case 'connection':
-                return this.getDatabaseCategories(element);
+                // Connection/server level: only list databases. Other categories require a specific database context.
+                return this.getConnectionCategories(element);
             case 'databases':
                 return this.getDatabases(element);
             case 'database':
-                return this.getDatabaseCategories(element);
+                // Database level: show object categories for the selected database.
+                return this.getDatabaseObjectCategories(element);
             case 'tables':
                 return this.getTables(element);
             case 'views':
@@ -95,8 +97,8 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode> {
         });
     }
 
-    private getDatabaseCategories(element: TreeNode): TreeNode[] {
-        const categories = [
+    private getConnectionCategories(element: TreeNode): TreeNode[] {
+        return [
             new TreeNode(
                 'Databases',
                 vscode.TreeItemCollapsibleState.Collapsed,
@@ -106,7 +108,17 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode> {
                 undefined,
                 undefined,
                 new vscode.ThemeIcon('database')
-            ),
+            )
+        ];
+    }
+
+    private getDatabaseObjectCategories(element: TreeNode): TreeNode[] {
+        // Defensive: if for some reason we don't have a database name, don't show object categories.
+        if (!element.database) {
+            return [];
+        }
+
+        return [
             new TreeNode(
                 'Tables',
                 vscode.TreeItemCollapsibleState.Collapsed,
@@ -148,8 +160,6 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode> {
                 new vscode.ThemeIcon('symbol-function')
             )
         ];
-
-        return categories;
     }
 
     private async getDatabases(element: TreeNode): Promise<TreeNode[]> {

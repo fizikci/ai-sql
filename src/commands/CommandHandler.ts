@@ -198,8 +198,16 @@ export class CommandHandler {
     async newQuery(node?: TreeNode): Promise<void> {
         const doc = await vscode.workspace.openTextDocument({
             language: 'sql',
-            content: '-- New Query\n'
+            content: `SELECT
+    * 
+FROM 
+    tableName 
+WHERE 
+    condition
+ORDER BY
+    fieldName;`
         });
+        
         await vscode.window.showTextDocument(doc);
 
         // Store connection context if node is provided

@@ -1,12 +1,13 @@
 {
-  "name": "sql-client",
-  "displayName": "SQL Client",
-  "description": "SQL Client for SQL Server, PostgreSQL, and MySQL",
-  "version": "0.0.1",
-  "publisher": "sql-client-publisher",
+  "name": "ai-sql",
+  "displayName": "SQL with AI",
+  "description": "SQL Client for SQL Server, PostgreSQL, and MySQL powered with AI capabilities",
+  "version": "0.0.2",
+  "publisher": "bulentkeskin",
+  "icon": "resources/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/sql-client.git"
+    "url": "https://github.com/fizikci/ai-sql.git"
   },
   "engines": {
     "vscode": "^1.85.0"
@@ -186,7 +187,7 @@
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
-    "@types/vscode": "^1.107.0",
+    "@types/vscode": "^1.85.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
     "eslint": "^9.39.1",
