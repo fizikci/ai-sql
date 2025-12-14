@@ -6,6 +6,8 @@ import { ConnectionManager } from './managers/ConnectionManager';
 import { SqlExplorerProvider } from './providers/SqlExplorerProvider';
 import { QueryResultProvider } from './providers/QueryResultProvider';
 import { CommandHandler } from './commands/CommandHandler';
+import { ActiveDbContext } from './context/ActiveDbContext';
+import { AiSqlChatParticipant } from './chat/AiSqlChatParticipant';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -32,6 +34,36 @@ export function activate(context: vscode.ExtensionContext) {
 		showCollapseAll: true
 	});
 	context.subscriptions.push(treeView);
+
+	// Track selection so AI/features can use current connection/database context.
+	context.subscriptions.push(
+		treeView.onDidChangeSelection(async (e) => {
+			const node = e.selection?.[0];
+			if (!node?.connectionId) {
+				await ActiveDbContext.set(context, undefined);
+				return;
+			}
+
+			// Persist connection always; include database when available.
+			// Some child items might not carry database info in the selection; fall back to last chosen database.
+			const database = node.database
+				?? ActiveDbContext.getLastDatabaseForConnection(context, node.connectionId);
+			await ActiveDbContext.set(context, {
+				connectionId: node.connectionId,
+				database
+			});
+		})
+	);
+
+	// Register AI SQL chat participant (requires newer VS Code/Copilot APIs).
+	try {
+		context.subscriptions.push(
+			AiSqlChatParticipant.register(context, connectionStorage, connectionManager)
+		);
+	} catch (e) {
+		// Ignore if running on a VS Code version that doesn't support chat APIs.
+		console.log('[ai-sql] Chat participant not available:', e);
+	}
 
 	// Register commands
 	context.subscriptions.push(
