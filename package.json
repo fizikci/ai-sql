@@ -1,0 +1,206 @@
+{
+  "name": "sql-client",
+  "displayName": "SQL Client",
+  "description": "SQL Client for SQL Server, PostgreSQL, and MySQL",
+  "version": "0.0.1",
+  "publisher": "sql-client-publisher",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/sql-client.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Data Science",
+    "Other"
+  ],
+  "keywords": [
+    "sql",
+    "database",
+    "mssql",
+    "postgresql",
+    "mysql",
+    "query",
+    "explorer"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "sql-explorer",
+          "title": "SQL Explorer",
+          "icon": "$(database)"
+        }
+      ]
+    },
+    "views": {
+      "sql-explorer": [
+        {
+          "id": "sqlExplorer",
+          "name": "Connections",
+          "icon": "resources/database.svg"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "sql-client.addConnection",
+        "title": "Add Connection",
+        "icon": "$(add)"
+      },
+      {
+        "command": "sql-client.editConnection",
+        "title": "Edit Connection",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "sql-client.deleteConnection",
+        "title": "Delete Connection",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "sql-client.refreshConnection",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "sql-client.newQuery",
+        "title": "New Query",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "sql-client.executeQuery",
+        "title": "Execute Query",
+        "icon": "$(play)"
+      },
+      {
+        "command": "sql-client.connectDatabase",
+        "title": "Connect",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "sql-client.disconnectDatabase",
+        "title": "Disconnect",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "sql-client.viewTableData",
+        "title": "View Data",
+        "icon": "$(table)"
+      },
+      {
+        "command": "sql-client.editTable",
+        "title": "Edit Table",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "sql-client.refreshExplorer",
+        "title": "Refresh Explorer",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "sql-client.addConnection",
+          "when": "view == sqlExplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "sql-client.refreshExplorer",
+          "when": "view == sqlExplorer",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "sql-client.editConnection",
+          "when": "view == sqlExplorer && viewItem == connection",
+          "group": "inline"
+        },
+        {
+          "command": "sql-client.deleteConnection",
+          "when": "view == sqlExplorer && viewItem == connection",
+          "group": "inline"
+        },
+        {
+          "command": "sql-client.newQuery",
+          "when": "view == sqlExplorer && viewItem =~ /connection|database/",
+          "group": "navigation"
+        },
+        {
+          "command": "sql-client.connectDatabase",
+          "when": "view == sqlExplorer && viewItem == connection",
+          "group": "navigation"
+        },
+        {
+          "command": "sql-client.disconnectDatabase",
+          "when": "view == sqlExplorer && viewItem == connection",
+          "group": "navigation"
+        },
+        {
+          "command": "sql-client.viewTableData",
+          "when": "view == sqlExplorer && viewItem == table"
+        },
+        {
+          "command": "sql-client.editTable",
+          "when": "view == sqlExplorer && viewItem == table"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "sql-client.executeQuery",
+          "when": "resourceLangId == sql",
+          "group": "navigation"
+        }
+      ]
+    },
+    "languages": [
+      {
+        "id": "sql",
+        "aliases": [
+          "SQL"
+        ],
+        "extensions": [
+          ".sql"
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "@types/vscode": "^1.107.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
+    "eslint": "^9.39.1",
+    "ts-loader": "^9.5.4",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.48.1",
+    "webpack": "^5.103.0",
+    "webpack-cli": "^6.0.1"
+  },
+  "dependencies": {
+    "@types/mssql": "^9.1.8",
+    "@types/pg": "^8.16.0",
+    "mssql": "^12.2.0",
+    "mysql2": "^3.15.3",
+    "pg": "^8.16.3"
+  }
+}
