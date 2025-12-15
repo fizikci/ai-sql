@@ -9,6 +9,20 @@ export interface SchemaContextOptions {
 }
 
 export class SchemaContextService {
+    private asStringArray(value: unknown): string[] {
+        if (Array.isArray(value)) {
+            return value.map(v => String(v));
+        }
+        if (typeof value === 'string') {
+            const raw = value.trim();
+            if (!raw) {
+                return [];
+            }
+            return raw.split(',').map(s => s.trim()).filter(Boolean);
+        }
+        return [];
+    }
+
     async buildSchemaContext(
         connector: IDatabaseConnector,
         database: string | undefined,
@@ -70,7 +84,7 @@ export class SchemaContextService {
             if (pk.length) {
                 lines.push('  primary_key:');
                 for (const p of pk) {
-                    lines.push(`    - ${p.name}: (${(p.columns ?? []).join(', ')})`);
+                    lines.push(`    - ${p.name}: (${this.asStringArray((p as any).columns).join(', ')})`);
                 }
             }
 
@@ -78,8 +92,8 @@ export class SchemaContextService {
                 lines.push('  foreign_keys:');
                 for (const fk of fks) {
                     const to = fk.referencedTable ? fk.referencedTable : '(unknown)';
-                    const fromCols = (fk.columns ?? []).join(', ');
-                    const toCols = (fk.referencedColumns ?? []).join(', ');
+                    const fromCols = this.asStringArray((fk as any).columns).join(', ');
+                    const toCols = this.asStringArray((fk as any).referencedColumns).join(', ');
                     lines.push(`    - ${fk.name}: (${fromCols}) -> ${to}(${toCols})`);
                 }
             }

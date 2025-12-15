@@ -72,6 +72,82 @@ export class PostgreSQLConnector implements IDatabaseConnector {
         return `"${identifier.replace(/"/g, '""')}"`;
     }
 
+    private normalizeStringArray(value: unknown): string[] {
+        if (Array.isArray(value)) {
+            return value.map(v => String(v));
+        }
+        if (typeof value !== 'string') {
+            return [];
+        }
+
+        const raw = value.trim();
+        if (!raw) {
+            return [];
+        }
+
+        // node-postgres can return Postgres array literals as strings, e.g. {col1,col2}
+        if (raw.startsWith('{') && raw.endsWith('}')) {
+            const inner = raw.slice(1, -1);
+            if (!inner) {
+                return [];
+            }
+
+            const items: string[] = [];
+            let current = '';
+            let inQuotes = false;
+            let escape = false;
+
+            for (let i = 0; i < inner.length; i++) {
+                const ch = inner[i];
+
+                if (escape) {
+                    current += ch;
+                    escape = false;
+                    continue;
+                }
+
+                if (inQuotes) {
+                    if (ch === '\\') {
+                        escape = true;
+                        continue;
+                    }
+                    if (ch === '"') {
+                        inQuotes = false;
+                        continue;
+                    }
+                    current += ch;
+                    continue;
+                }
+
+                if (ch === '"') {
+                    inQuotes = true;
+                    continue;
+                }
+
+                if (ch === ',') {
+                    const item = current.trim();
+                    if (item && item !== 'NULL') {
+                        items.push(item);
+                    }
+                    current = '';
+                    continue;
+                }
+
+                current += ch;
+            }
+
+            const last = current.trim();
+            if (last && last !== 'NULL') {
+                items.push(last);
+            }
+
+            return items;
+        }
+
+        // Fallback: treat as comma-separated list
+        return raw.split(',').map(s => s.trim()).filter(Boolean);
+    }
+
     getTableDataQuery(tableName: string, schema?: string, limit: number = 1000): string {
         const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : 1000;
         const fromTarget = schema
@@ -235,7 +311,7 @@ export class PostgreSQLConnector implements IDatabaseConnector {
 
         return result.rows.map(row => ({
             name: row.name,
-            columns: row.columns,
+            columns: this.normalizeStringArray(row.columns),
             isUnique: row.is_unique,
             isPrimaryKey: row.is_primary_key,
             type: row.type
@@ -266,9 +342,9 @@ export class PostgreSQLConnector implements IDatabaseConnector {
         return result.rows.map(row => ({
             name: row.name,
             type: row.type as any,
-            columns: row.columns || [],
+            columns: this.normalizeStringArray(row.columns),
             referencedTable: row.referenced_table,
-            referencedColumns: row.referenced_columns
+            referencedColumns: this.normalizeStringArray(row.referenced_columns)
         }));
     }
 
