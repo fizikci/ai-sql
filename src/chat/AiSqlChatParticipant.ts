@@ -3,6 +3,7 @@ import { ActiveDbContext } from '../context/ActiveDbContext';
 import { ConnectionStorage } from '../storage/connectionStorage';
 import { ConnectionManager } from '../managers/ConnectionManager';
 import { SchemaContextService } from '../services/SchemaContextService';
+import { checkSelectOnly } from '../utils/sqlGuardrails';
 
 export class AiSqlChatParticipant {
     static register(
@@ -116,10 +117,17 @@ export class AiSqlChatParticipant {
                 // Store active connection for this editor so existing executeQuery uses it.
                 await context.workspaceState.update(`activeConnection:${doc.uri.toString()}`, active.connectionId);
 
-                // Execute query using existing command.
-                await vscode.commands.executeCommand('sql-client.executeQuery');
-
-                stream.markdown('Done. Opened the query in the editor and executed it.');
+                const guard = checkSelectOnly(sql);
+                if (guard.isSelectOnly) {
+                    // Execute query using existing command.
+                    await vscode.commands.executeCommand('sql-client.executeQuery');
+                    stream.markdown('Done. Opened the query in the editor and executed it.');
+                } else {
+                    stream.markdown(
+                        `Opened the query in the editor. Not executed automatically because it is not a SELECT-only statement (${guard.reason ?? 'policy'}).\n\n` +
+                        'Review it and run manually if desired (use **SQL Client: Execute Query**).' 
+                    );
+                }
             } catch (e) {
                 stream.markdown(`Failed to generate SQL via Copilot model API: ${String(e)}\n\nIf your VS Code version doesn’t expose the language model API, we can fallback to a command-driven flow.`);
             }
@@ -192,7 +200,7 @@ export class AiSqlChatParticipant {
             schemaContext,
             '',
             'Rules:',
-            '- Return ONLY a single SQL query. No prose. No markdown fences.',
+            '- Return ONLY a single SELECT query (read-only). No prose. No markdown fences.',
             '- Use correct table/column names from the schema.',
             '- Add reasonable filters/joins based on FK relationships when needed.',
             '- Limit to 1000 rows unless the user asks otherwise.',
