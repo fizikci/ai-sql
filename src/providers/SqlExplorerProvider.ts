@@ -33,6 +33,30 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode> {
         private connectionManager: ConnectionManager
     ) {}
 
+    private async getConnectionType(connectionId: string): Promise<DatabaseType | undefined> {
+        const config = await this.connectionStorage.getConnection(connectionId);
+        return config?.type;
+    }
+
+    private formatTableLabel(
+        connectionType: DatabaseType | undefined,
+        database: string | undefined,
+        schema: string | undefined,
+        tableName: string
+    ): string {
+        // SQL Server: hide the default schema prefix (dbo.)
+        if (connectionType === DatabaseType.MSSQL && schema?.toLowerCase() === 'dbo') {
+            return tableName;
+        }
+
+        // PostgreSQL: if schema was (incorrectly) set to the database name, hide it.
+        if (connectionType === DatabaseType.PostgreSQL && schema && database && schema === database) {
+            return tableName;
+        }
+
+        return schema ? `${schema}.${tableName}` : tableName;
+    }
+
     refresh(): void {
         this._onDidChangeTreeData.fire();
     }
@@ -206,10 +230,11 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode> {
         }
 
         try {
+            const connectionType = await this.getConnectionType(element.connectionId);
             const tables = await connector.getTables(element.database);
             return tables.map(table => 
                 new TreeNode(
-                    table.schema ? `${table.schema}.${table.name}` : table.name,
+                    this.formatTableLabel(connectionType, element.database, table.schema, table.name),
                     vscode.TreeItemCollapsibleState.Collapsed,
                     'table',
                     element.connectionId,
