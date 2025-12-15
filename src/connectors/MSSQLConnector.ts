@@ -77,6 +77,19 @@ export class MSSQLConnector implements IDatabaseConnector {
         }
     }
 
+    private quoteIdentifier(identifier: string): string {
+        // SQL Server brackets: escape closing bracket by doubling it
+        return `[${identifier.replace(/]/g, ']]')}]`;
+    }
+
+    getTableDataQuery(tableName: string, schema?: string, limit: number = 1000): string {
+        const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : 1000;
+        const fromTarget = schema
+            ? `${this.quoteIdentifier(schema)}.${this.quoteIdentifier(tableName)}`
+            : this.quoteIdentifier(tableName);
+        return `SELECT TOP (${safeLimit}) * FROM ${fromTarget}`;
+    }
+
     async getDatabases(): Promise<string[]> {
         console.log('[MSSQL] Getting databases, connected:', this.isConnected());
         const result = await this.executeQuery(`

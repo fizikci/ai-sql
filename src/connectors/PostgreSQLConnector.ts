@@ -67,6 +67,19 @@ export class PostgreSQLConnector implements IDatabaseConnector {
         }
     }
 
+    private quoteIdentifier(identifier: string): string {
+        // PostgreSQL double quotes: escape by doubling
+        return `"${identifier.replace(/"/g, '""')}"`;
+    }
+
+    getTableDataQuery(tableName: string, schema?: string, limit: number = 1000): string {
+        const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : 1000;
+        const fromTarget = schema
+            ? `${this.quoteIdentifier(schema)}.${this.quoteIdentifier(tableName)}`
+            : this.quoteIdentifier(tableName);
+        return `SELECT * FROM ${fromTarget} LIMIT ${safeLimit}`;
+    }
+
     async getDatabases(): Promise<string[]> {
         const result = await this.executeQuery(`
             SELECT datname FROM pg_database 

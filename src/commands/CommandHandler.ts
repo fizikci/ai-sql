@@ -293,7 +293,7 @@ ORDER BY
             return;
         }
 
-        const tableName = node.schema 
+        const tableDisplayName = node.schema 
             ? `${node.schema}.${node.objectName}` 
             : node.objectName;
 
@@ -304,10 +304,10 @@ ORDER BY
         }
 
         try {
-            const query = `SELECT TOP 1000 * FROM ${tableName}`;
+            const query = connector.getTableDataQuery(node.objectName, node.schema, 1000);
             const result = await vscode.window.withProgress({
                 location: vscode.ProgressLocation.Notification,
-                title: `Loading data from ${tableName}...`,
+                title: `Loading data from ${tableDisplayName}...`,
                 cancellable: false
             }, async () => {
                 return await connector.executeQuery(query);

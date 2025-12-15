@@ -12,6 +12,13 @@ export interface IDatabaseConnector {
     disconnect(): Promise<void>;
     isConnected(): boolean;
     executeQuery(query: string): Promise<QueryResult>;
+
+    /**
+     * Build a SQL query to fetch table rows for the connector's SQL dialect.
+     * Implementations must properly quote identifiers.
+     */
+    getTableDataQuery(tableName: string, schema?: string, limit?: number): string;
+
     getDatabases(): Promise<string[]>;
     getTables(database?: string): Promise<DatabaseObject[]>;
     getViews(database?: string): Promise<DatabaseObject[]>;
