@@ -11,18 +11,17 @@ Explore your databases, understand schemas quickly, and turn natural language in
 - **Context follows you**: selection in the explorer becomes the AI’s context automatically
 - **Fast results viewer**: pretty grid, execution time, NULL highlighting
 
-## Screenshots (placeholders)
-
-> Replace these image paths with your actual screenshots.
+## Screenshots
 
 ### SQL Explorer
 
 ![SQL Explorer tree view](resources/screenshot-explorer.png)
 
-### Ask in plain English → Get SQL → Run
+### Know your database with AI
 
 ![AI SQL chat assistant](resources/screenshot-ai-chat.png)
-### Query results
+
+### Ask in plain English → Get SQL → Run
 
 ![Query results viewer](resources/screenshot-results.png)
 
