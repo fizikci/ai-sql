@@ -5,6 +5,7 @@ import { ConnectionStorage } from './storage/connectionStorage';
 import { ConnectionManager } from './managers/ConnectionManager';
 import { SqlExplorerProvider } from './providers/SqlExplorerProvider';
 import { QueryResultProvider } from './providers/QueryResultProvider';
+import { ViewDataProvider } from './providers/ViewDataProvider';
 import { CommandHandler } from './commands/CommandHandler';
 import { ActiveDbContext } from './context/ActiveDbContext';
 import { AiSqlChatParticipant } from './chat/AiSqlChatParticipant';
@@ -20,12 +21,14 @@ export function activate(context: vscode.ExtensionContext) {
 	const connectionManager = ConnectionManager.getInstance();
 	const explorerProvider = new SqlExplorerProvider(connectionStorage, connectionManager);
 	const queryResultProvider = new QueryResultProvider(context);
+	const viewDataProvider = new ViewDataProvider(context, connectionStorage, connectionManager);
 	const commandHandler = new CommandHandler(
 		context,
 		connectionStorage,
 		connectionManager,
 		explorerProvider,
-		queryResultProvider
+		queryResultProvider,
+		viewDataProvider
 	);
 
 	// Register tree view

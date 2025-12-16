@@ -4,6 +4,7 @@ import { ConnectionStorage } from '../storage/connectionStorage';
 import { ConnectionManager } from '../managers/ConnectionManager';
 import { SqlExplorerProvider, TreeNode } from '../providers/SqlExplorerProvider';
 import { QueryResultProvider } from '../providers/QueryResultProvider';
+import { ViewDataProvider } from '../providers/ViewDataProvider';
 
 export class CommandHandler {
     constructor(
@@ -11,7 +12,8 @@ export class CommandHandler {
         private connectionStorage: ConnectionStorage,
         private connectionManager: ConnectionManager,
         private explorerProvider: SqlExplorerProvider,
-        private queryResultProvider: QueryResultProvider
+        private queryResultProvider: QueryResultProvider,
+        private viewDataProvider: ViewDataProvider
     ) {}
 
     async addConnection(): Promise<void> {
@@ -293,29 +295,17 @@ ORDER BY
             return;
         }
 
-        const tableDisplayName = node.schema 
-            ? `${node.schema}.${node.objectName}` 
-            : node.objectName;
-
-        const connector = this.connectionManager.getConnection(node.connectionId);
-        if (!connector) {
-            vscode.window.showWarningMessage('Not connected');
-            return;
-        }
-
+        const tableDisplayName = node.schema ? `${node.schema}.${node.objectName}` : node.objectName;
         try {
-            const query = connector.getTableDataQuery(node.objectName, node.schema, 1000);
-            const result = await vscode.window.withProgress({
+            await vscode.window.withProgress({
                 location: vscode.ProgressLocation.Notification,
-                title: `Loading data from ${tableDisplayName}...`,
+                title: `Opening data view for ${tableDisplayName}...`,
                 cancellable: false
             }, async () => {
-                return await connector.executeQuery(query);
+                await this.viewDataProvider.showTable(node.connectionId!, node.database, node.schema, node.objectName!);
             });
-
-            this.queryResultProvider.showResults(result, query);
         } catch (error) {
-            vscode.window.showErrorMessage(`Failed to load table data: ${error}`);
+            vscode.window.showErrorMessage(`Failed to open View Data: ${error}`);
         }
     }
 

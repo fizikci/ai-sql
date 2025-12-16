@@ -33,6 +33,11 @@ export interface Column {
     isPrimaryKey: boolean;
     isForeignKey: boolean;
     isIdentity?: boolean;
+
+    // User-defined metadata (from ~/.sql-with-ai/metadata.json)
+    definition?: string;
+    viewInList?: boolean;
+    refersTo?: string;
 }
 
 export interface Index {
@@ -58,4 +63,8 @@ export interface TableDetails {
     columns: Column[];
     indexes: Index[];
     constraints: Constraint[];
+
+    // User-defined metadata (from ~/.sql-with-ai/metadata.json)
+    group?: string;
+    definition?: string;
 }

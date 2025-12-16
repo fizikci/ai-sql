@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ConnectionConfig, DatabaseType } from '../models/connection';
 import { ConnectionStorage } from '../storage/connectionStorage';
 import { ConnectionManager } from '../managers/ConnectionManager';
+import { MetadataStorage } from '../storage/metadataStorage';
 
 export class TreeNode extends vscode.TreeItem {
     constructor(
@@ -12,10 +13,11 @@ export class TreeNode extends vscode.TreeItem {
         public readonly database?: string,
         public readonly schema?: string,
         public readonly objectName?: string,
-        iconPath?: vscode.ThemeIcon | { light: vscode.Uri; dark: vscode.Uri }
+        iconPath?: vscode.ThemeIcon | { light: vscode.Uri; dark: vscode.Uri },
+        tooltipText?: string
     ) {
         super(label, collapsibleState);
-        this.tooltip = this.label;
+        this.tooltip = tooltipText ?? this.label;
         if (iconPath) {
             this.iconPath = iconPath;
         }
@@ -32,6 +34,8 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode> {
         private connectionStorage: ConnectionStorage,
         private connectionManager: ConnectionManager
     ) {}
+
+    private readonly metadataStorage = new MetadataStorage();
 
     private async getConnectionType(connectionId: string): Promise<DatabaseType | undefined> {
         const config = await this.connectionStorage.getConnection(connectionId);
@@ -82,6 +86,8 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode> {
                 return this.getDatabaseObjectCategories(element);
             case 'tables':
                 return this.getTables(element);
+            case 'tableGroup':
+                return this.getTablesInGroup(element);
             case 'views':
                 return this.getViews(element);
             case 'procedures':
@@ -232,18 +238,112 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode> {
         try {
             const connectionType = await this.getConnectionType(element.connectionId);
             const tables = await connector.getTables(element.database);
-            return tables.map(table => 
-                new TreeNode(
-                    this.formatTableLabel(connectionType, element.database, table.schema, table.name),
+
+            // Determine metadata groups. If none are explicitly set (anything other than default), keep old flat UX.
+            const groups = new Map<string, { schema?: string; name: string }[]>();
+            let hasExplicitGroup = false;
+
+            for (const t of tables) {
+                const group = await this.metadataStorage.getTableGroup(element.connectionId, element.database, t.schema, t.name);
+                if (group !== 'Others') {
+                    hasExplicitGroup = true;
+                }
+                const arr = groups.get(group) ?? [];
+                arr.push({ schema: t.schema, name: t.name });
+                groups.set(group, arr);
+            }
+
+            if (!hasExplicitGroup) {
+                // Flat list (backwards compatible)
+                return await Promise.all(tables.map(async (table) => {
+                    const meta = await this.metadataStorage.getTableMetadata(element.connectionId!, element.database, table.schema, table.name);
+                    const label = this.formatTableLabel(connectionType, element.database, table.schema, table.name);
+                    const tooltip = meta?.definition ? `${label}\n${meta.definition}` : label;
+                    return new TreeNode(
+                        label,
+                        vscode.TreeItemCollapsibleState.Collapsed,
+                        'table',
+                        element.connectionId,
+                        element.database,
+                        table.schema,
+                        table.name,
+                        new vscode.ThemeIcon('table'),
+                        tooltip
+                    );
+                }));
+            }
+
+            const groupNames = Array.from(groups.keys()).sort((a, b) => {
+                if (a === 'Others') return 1;
+                if (b === 'Others') return -1;
+                return a.localeCompare(b);
+            });
+
+            return groupNames.map(groupName => {
+                const count = (groups.get(groupName) ?? []).length;
+                return new TreeNode(
+                    `${groupName} (${count})`,
+                    vscode.TreeItemCollapsibleState.Collapsed,
+                    'tableGroup',
+                    element.connectionId,
+                    element.database,
+                    undefined,
+                    groupName,
+                    new vscode.ThemeIcon('folder')
+                );
+            });
+        } catch (error) {
+            vscode.window.showErrorMessage(`Failed to load tables: ${error}`);
+            return [];
+        }
+    }
+
+    private async getTablesInGroup(element: TreeNode): Promise<TreeNode[]> {
+        if (!element.connectionId || !element.objectName) {
+            return [];
+        }
+
+        const connector = this.connectionManager.getConnection(element.connectionId);
+        if (!connector) {
+            return [];
+        }
+
+        try {
+            const connectionType = await this.getConnectionType(element.connectionId);
+            const tables = await connector.getTables(element.database);
+
+            const groupName = element.objectName;
+            const filtered = [] as { schema?: string; name: string }[];
+            for (const t of tables) {
+                const g = await this.metadataStorage.getTableGroup(element.connectionId, element.database, t.schema, t.name);
+                if (g === groupName) {
+                    filtered.push({ schema: t.schema, name: t.name });
+                }
+            }
+
+            filtered.sort((a, b) => {
+                const as = (a.schema ?? '').toLowerCase();
+                const bs = (b.schema ?? '').toLowerCase();
+                if (as !== bs) return as.localeCompare(bs);
+                return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+            });
+
+            return await Promise.all(filtered.map(async (t) => {
+                const meta = await this.metadataStorage.getTableMetadata(element.connectionId!, element.database, t.schema, t.name);
+                const label = this.formatTableLabel(connectionType, element.database, t.schema, t.name);
+                const tooltip = meta?.definition ? `${label}\n${meta.definition}` : label;
+                return new TreeNode(
+                    label,
                     vscode.TreeItemCollapsibleState.Collapsed,
                     'table',
                     element.connectionId,
                     element.database,
-                    table.schema,
-                    table.name,
-                    new vscode.ThemeIcon('table')
-                )
-            );
+                    t.schema,
+                    t.name,
+                    new vscode.ThemeIcon('table'),
+                    tooltip
+                );
+            }));
         } catch (error) {
             vscode.window.showErrorMessage(`Failed to load tables: ${error}`);
             return [];
@@ -387,8 +487,22 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode> {
 
         try {
             const columns = await connector.getColumns(element.objectName, element.schema);
+
+            const tableMeta = await this.metadataStorage.getTableMetadata(
+                element.connectionId,
+                element.database,
+                element.schema,
+                element.objectName
+            );
+            const fields = tableMeta?.fields ?? {};
+
             return columns.map(col => {
+                const fm = fields[col.name];
                 const label = `${col.name} (${col.dataType})${col.isPrimaryKey ? ' PK' : ''}${col.isForeignKey ? ' FK' : ''}`;
+                const extra: string[] = [];
+                if (fm?.definition) extra.push(fm.definition);
+                if (fm?.refersTo) extra.push(`refersTo: ${fm.refersTo}`);
+                const tooltip = extra.length ? `${label}\n${extra.join('\n')}` : label;
                 return new TreeNode(
                     label,
                     vscode.TreeItemCollapsibleState.None,
@@ -397,7 +511,8 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode> {
                     element.database,
                     element.schema,
                     col.name,
-                    new vscode.ThemeIcon('symbol-field')
+                    new vscode.ThemeIcon('symbol-field'),
+                    tooltip
                 );
             });
         } catch (error) {
