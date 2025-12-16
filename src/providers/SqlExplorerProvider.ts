@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { ConnectionConfig, DatabaseType } from '../models/connection';
 import { ConnectionStorage } from '../storage/connectionStorage';
 import { ConnectionManager } from '../managers/ConnectionManager';
-import { MetadataStorage } from '../storage/metadataStorage';
+import { MetadataKeys, MetadataStorage } from '../storage/metadataStorage';
 
 export class TreeNode extends vscode.TreeItem {
     constructor(
@@ -24,7 +24,7 @@ export class TreeNode extends vscode.TreeItem {
     }
 }
 
-export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode> {
+export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, vscode.TreeDragAndDropController<TreeNode> {
     private _onDidChangeTreeData: vscode.EventEmitter<TreeNode | undefined | null | void> = 
         new vscode.EventEmitter<TreeNode | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<TreeNode | undefined | null | void> = 
@@ -35,7 +35,74 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode> {
         private connectionManager: ConnectionManager
     ) {}
 
+    // Drag-and-drop: move tables between groups
+    readonly dragMimeTypes: string[] = ['application/vnd.sql-with-ai.table'];
+    readonly dropMimeTypes: string[] = ['application/vnd.sql-with-ai.table'];
+
     private readonly metadataStorage = new MetadataStorage();
+
+    async handleDrag(source: readonly TreeNode[], dataTransfer: vscode.DataTransfer, _token: vscode.CancellationToken): Promise<void> {
+        const tables = source.filter(s => s.contextValue === 'table' && !!s.connectionId && !!s.objectName);
+        if (!tables.length) {
+            return;
+        }
+
+        const payload = tables.map(t => ({
+            connectionId: t.connectionId,
+            database: t.database,
+            schema: t.schema,
+            tableName: t.objectName
+        }));
+
+        dataTransfer.set(this.dragMimeTypes[0], new vscode.DataTransferItem(JSON.stringify(payload)));
+    }
+
+    async handleDrop(target: TreeNode | undefined, dataTransfer: vscode.DataTransfer, _token: vscode.CancellationToken): Promise<void> {
+        if (!target || target.contextValue !== 'tableGroup' || !target.connectionId) {
+            return;
+        }
+
+        const item = dataTransfer.get(this.dropMimeTypes[0]);
+        if (!item) {
+            return;
+        }
+
+        let text = '';
+        try {
+            text = await item.asString();
+        } catch {
+            return;
+        }
+
+        let parsed: any;
+        try {
+            parsed = JSON.parse(text);
+        } catch {
+            return;
+        }
+
+        const groupName = (target.objectName ?? 'Others').trim() || 'Others';
+        const items: Array<{ connectionId: string; database?: string; schema?: string; tableName: string }> = Array.isArray(parsed) ? parsed : [];
+        if (!items.length) {
+            return;
+        }
+
+        for (const t of items) {
+            if (!t?.connectionId || !t?.tableName) {
+                continue;
+            }
+            // Only allow drops within the same connection/database scope.
+            if (t.connectionId !== target.connectionId) {
+                continue;
+            }
+            if ((t.database ?? undefined) !== (target.database ?? undefined)) {
+                continue;
+            }
+            await this.metadataStorage.setTableGroup(t.connectionId, t.database, t.schema, t.tableName, groupName);
+        }
+
+        this.refresh();
+    }
 
     private async getConnectionType(connectionId: string): Promise<DatabaseType | undefined> {
         const config = await this.connectionStorage.getConnection(connectionId);
@@ -239,59 +306,38 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode> {
             const connectionType = await this.getConnectionType(element.connectionId);
             const tables = await connector.getTables(element.database);
 
-            // Determine metadata groups. If none are explicitly set (anything other than default), keep old flat UX.
-            const groups = new Map<string, { schema?: string; name: string }[]>();
-            let hasExplicitGroup = false;
+            // Always show: Tables => GroupName => tables. Default group: Others.
+            // Read metadata once to avoid many filesystem reads.
+            const file = await this.metadataStorage.read();
+            const conn = file.connections?.[element.connectionId] as any;
+            const dbMeta = conn?.databases?.[MetadataKeys.dbKey(element.database)] as any;
+            const tableMeta = (dbMeta?.tables ?? {}) as Record<string, any>;
+
+            const groups = new Set<string>();
+            groups.add('Others');
 
             for (const t of tables) {
-                const group = await this.metadataStorage.getTableGroup(element.connectionId, element.database, t.schema, t.name);
-                if (group !== 'Others') {
-                    hasExplicitGroup = true;
-                }
-                const arr = groups.get(group) ?? [];
-                arr.push({ schema: t.schema, name: t.name });
-                groups.set(group, arr);
+                const key = MetadataKeys.tableKey(t.schema, t.name);
+                const g = String(tableMeta?.[key]?.group ?? '').trim();
+                groups.add(g || 'Others');
             }
 
-            if (!hasExplicitGroup) {
-                // Flat list (backwards compatible)
-                return await Promise.all(tables.map(async (table) => {
-                    const meta = await this.metadataStorage.getTableMetadata(element.connectionId!, element.database, table.schema, table.name);
-                    const label = this.formatTableLabel(connectionType, element.database, table.schema, table.name);
-                    const tooltip = meta?.definition ? `${label}\n${meta.definition}` : label;
-                    return new TreeNode(
-                        label,
-                        vscode.TreeItemCollapsibleState.Collapsed,
-                        'table',
-                        element.connectionId,
-                        element.database,
-                        table.schema,
-                        table.name,
-                        new vscode.ThemeIcon('table'),
-                        tooltip
-                    );
-                }));
-            }
-
-            const groupNames = Array.from(groups.keys()).sort((a, b) => {
-                if (a === 'Others') return 1;
-                if (b === 'Others') return -1;
+            const groupNames = Array.from(groups).sort((a, b) => {
+                if (a === 'Others') return -1;
+                if (b === 'Others') return 1;
                 return a.localeCompare(b);
             });
 
-            return groupNames.map(groupName => {
-                const count = (groups.get(groupName) ?? []).length;
-                return new TreeNode(
-                    `${groupName} (${count})`,
-                    vscode.TreeItemCollapsibleState.Collapsed,
-                    'tableGroup',
-                    element.connectionId,
-                    element.database,
-                    undefined,
-                    groupName,
-                    new vscode.ThemeIcon('folder')
-                );
-            });
+            return groupNames.map(groupName => new TreeNode(
+                groupName,
+                vscode.TreeItemCollapsibleState.Collapsed,
+                'tableGroup',
+                element.connectionId,
+                element.database,
+                undefined,
+                groupName,
+                new vscode.ThemeIcon('folder')
+            ));
         } catch (error) {
             vscode.window.showErrorMessage(`Failed to load tables: ${error}`);
             return [];
@@ -312,10 +358,18 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode> {
             const connectionType = await this.getConnectionType(element.connectionId);
             const tables = await connector.getTables(element.database);
 
-            const groupName = element.objectName;
+            const groupName = (element.objectName ?? 'Others').trim() || 'Others';
+
+            // Read metadata once.
+            const file = await this.metadataStorage.read();
+            const conn = file.connections?.[element.connectionId] as any;
+            const dbMeta = conn?.databases?.[MetadataKeys.dbKey(element.database)] as any;
+            const tableMeta = (dbMeta?.tables ?? {}) as Record<string, any>;
+
             const filtered = [] as { schema?: string; name: string }[];
             for (const t of tables) {
-                const g = await this.metadataStorage.getTableGroup(element.connectionId, element.database, t.schema, t.name);
+                const key = MetadataKeys.tableKey(t.schema, t.name);
+                const g = String(tableMeta?.[key]?.group ?? '').trim() || 'Others';
                 if (g === groupName) {
                     filtered.push({ schema: t.schema, name: t.name });
                 }

@@ -107,6 +107,11 @@
         "icon": "$(edit)"
       },
       {
+        "command": "sql-client.groupTable",
+        "title": "Group...",
+        "icon": "$(folder)"
+      },
+      {
         "command": "sql-client.refreshExplorer",
         "title": "Refresh Explorer",
         "icon": "$(refresh)"
@@ -157,6 +162,10 @@
         },
         {
           "command": "sql-client.editTable",
+          "when": "view == sqlExplorer && viewItem == table"
+        },
+        {
+          "command": "sql-client.groupTable",
           "when": "view == sqlExplorer && viewItem == table"
         }
       ],

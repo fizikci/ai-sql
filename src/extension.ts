@@ -34,7 +34,8 @@ export function activate(context: vscode.ExtensionContext) {
 	// Register tree view
 	const treeView = vscode.window.createTreeView('sqlExplorer', {
 		treeDataProvider: explorerProvider,
-		showCollapseAll: true
+		showCollapseAll: true,
+		dragAndDropController: explorerProvider
 	});
 	context.subscriptions.push(treeView);
 
@@ -132,6 +133,12 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.commands.registerCommand('sql-client.editTable', (node) => 
 			commandHandler.editTable(node)
+		)
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('sql-client.groupTable', (node) =>
+			commandHandler.groupTable(node)
 		)
 	);
 

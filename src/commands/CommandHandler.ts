@@ -5,8 +5,11 @@ import { ConnectionManager } from '../managers/ConnectionManager';
 import { SqlExplorerProvider, TreeNode } from '../providers/SqlExplorerProvider';
 import { QueryResultProvider } from '../providers/QueryResultProvider';
 import { ViewDataProvider } from '../providers/ViewDataProvider';
+import { MetadataStorage } from '../storage/metadataStorage';
 
 export class CommandHandler {
+    private readonly metadataStorage = new MetadataStorage();
+
     constructor(
         private context: vscode.ExtensionContext,
         private connectionStorage: ConnectionStorage,
@@ -15,6 +18,31 @@ export class CommandHandler {
         private queryResultProvider: QueryResultProvider,
         private viewDataProvider: ViewDataProvider
     ) {}
+
+    async groupTable(node: TreeNode): Promise<void> {
+        if (!node.connectionId || !node.objectName) {
+            return;
+        }
+
+        const current = await this.metadataStorage.getTableGroup(node.connectionId, node.database, node.schema, node.objectName);
+
+        const groupName = await vscode.window.showInputBox({
+            prompt: 'Group name for this table (default: Others)',
+            value: current || 'Others',
+            placeHolder: 'Others'
+        });
+
+        if (groupName === undefined) {
+            return;
+        }
+
+        const normalized = String(groupName).trim();
+        // Empty or "Others" means: not set (default).
+        const toStore = !normalized || normalized.toLowerCase() === 'others' ? 'Others' : normalized;
+
+        await this.metadataStorage.setTableGroup(node.connectionId, node.database, node.schema, node.objectName, toStore);
+        this.explorerProvider.refresh();
+    }
 
     async addConnection(): Promise<void> {
         const name = await vscode.window.showInputBox({

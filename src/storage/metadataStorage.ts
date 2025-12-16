@@ -14,6 +14,11 @@ function tableKey(schema: string | undefined, tableName: string): string {
     return s ? `${s}.${tableName}` : tableName;
 }
 
+function dbKey(database?: string): string {
+    const db = (database ?? '').trim();
+    return db ? db : DEFAULT_DB_KEY;
+}
+
 export class MetadataStorage {
     private readonly dirPath: string;
     private readonly filePath: string;
@@ -65,8 +70,7 @@ export class MetadataStorage {
     }
 
     private getDbKey(database?: string): string {
-        const db = (database ?? '').trim();
-        return db ? db : DEFAULT_DB_KEY;
+        return dbKey(database);
     }
 
     async getConnectionMetadata(connectionId: string): Promise<ConnectionMetadata | undefined> {
@@ -112,8 +116,57 @@ export class MetadataStorage {
         const group = safeString(meta?.group).trim();
         return group || 'Others';
     }
+
+    async setTableGroup(
+        connectionId: string,
+        database: string | undefined,
+        schema: string | undefined,
+        tableName: string,
+        groupName: string | undefined
+    ): Promise<void> {
+        const desired = safeString(groupName).trim();
+        const normalized = desired || 'Others';
+
+        const file = await this.read();
+        if (!file.connections) {
+            file.connections = {} as any;
+        }
+        if (!file.connections[connectionId]) {
+            file.connections[connectionId] = { databases: {} };
+        }
+
+        const conn = file.connections[connectionId];
+        if (!conn.databases) {
+            conn.databases = {};
+        }
+
+        const dKey = this.getDbKey(database);
+        if (!conn.databases[dKey]) {
+            conn.databases[dKey] = { tables: {} };
+        }
+
+        const dbMeta = conn.databases[dKey];
+        if (!dbMeta.tables) {
+            dbMeta.tables = {};
+        }
+
+        const tKey = tableKey(schema, tableName);
+        if (!dbMeta.tables[tKey]) {
+            dbMeta.tables[tKey] = {};
+        }
+
+        // Store only when not default, so metadata stays clean.
+        if (normalized === 'Others') {
+            delete dbMeta.tables[tKey].group;
+        } else {
+            dbMeta.tables[tKey].group = normalized;
+        }
+
+        await this.write(file);
+    }
 }
 
 export const MetadataKeys = {
     tableKey,
+    dbKey,
 };
