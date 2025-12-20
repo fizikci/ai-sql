@@ -6,9 +6,11 @@ import { SqlExplorerProvider, TreeNode } from '../providers/SqlExplorerProvider'
 import { QueryResultProvider } from '../providers/QueryResultProvider';
 import { ViewDataProvider } from '../providers/ViewDataProvider';
 import { MetadataStorage } from '../storage/metadataStorage';
+import { ActiveDbContext } from '../context/ActiveDbContext';
 
 export class CommandHandler {
     private readonly metadataStorage = new MetadataStorage();
+    private readonly connectInFlight = new Map<string, Promise<void>>();
 
     constructor(
         private context: vscode.ExtensionContext,
@@ -18,6 +20,43 @@ export class CommandHandler {
         private queryResultProvider: QueryResultProvider,
         private viewDataProvider: ViewDataProvider
     ) {}
+
+    private async ensureConnected(connectionId: string): Promise<void> {
+        if (this.connectionManager.isConnected(connectionId)) {
+            return;
+        }
+
+        const existing = this.connectInFlight.get(connectionId);
+        if (existing) {
+            await existing;
+            return;
+        }
+
+        const task = (async () => {
+            const connection = await this.connectionStorage.getConnection(connectionId);
+            if (!connection) {
+                throw new Error('Connection not found');
+            }
+
+            await vscode.window.withProgress(
+                {
+                    location: vscode.ProgressLocation.Notification,
+                    title: `Connecting to ${connection.name}...`,
+                    cancellable: false
+                },
+                async () => {
+                    await this.connectionManager.connect(connection);
+                }
+            );
+        })();
+
+        this.connectInFlight.set(connectionId, task);
+        try {
+            await task;
+        } finally {
+            this.connectInFlight.delete(connectionId);
+        }
+    }
 
     async groupTable(node: TreeNode): Promise<void> {
         if (!node.connectionId || !node.objectName) {
@@ -226,6 +265,19 @@ export class CommandHandler {
     }
 
     async newQuery(node?: TreeNode): Promise<void> {
+        const inferredConnectionId = node?.connectionId
+            ?? ActiveDbContext.get(this.context)?.connectionId;
+
+        if (inferredConnectionId && !this.connectionManager.isConnected(inferredConnectionId)) {
+            try {
+                await this.ensureConnected(inferredConnectionId);
+                this.explorerProvider.refresh();
+            } catch (error: any) {
+                const message = error?.message ?? String(error);
+                vscode.window.showErrorMessage(`Failed to connect: ${message}`);
+            }
+        }
+
         const doc = await vscode.workspace.openTextDocument({
             language: 'sql',
             content: `SELECT
@@ -241,10 +293,10 @@ ORDER BY
         await vscode.window.showTextDocument(doc);
 
         // Store connection context if node is provided
-        if (node?.connectionId) {
+        if (inferredConnectionId) {
             this.context.workspaceState.update(
                 `activeConnection:${doc.uri.toString()}`,
-                node.connectionId
+                inferredConnectionId
             );
         }
     }
