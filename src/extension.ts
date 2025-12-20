@@ -3,7 +3,7 @@
 import * as vscode from 'vscode';
 import { ConnectionStorage } from './storage/connectionStorage';
 import { ConnectionManager } from './managers/ConnectionManager';
-import { SqlExplorerProvider } from './providers/SqlExplorerProvider';
+import { SqlExplorerProvider, TreeNode } from './providers/SqlExplorerProvider';
 import { QueryResultProvider } from './providers/QueryResultProvider';
 import { ViewDataProvider } from './providers/ViewDataProvider';
 import { CommandHandler } from './commands/CommandHandler';
@@ -32,12 +32,72 @@ export function activate(context: vscode.ExtensionContext) {
 	);
 
 	// Register tree view
-	const treeView = vscode.window.createTreeView('sqlExplorer', {
+	const treeView = vscode.window.createTreeView<TreeNode>('sqlExplorer', {
 		treeDataProvider: explorerProvider,
 		showCollapseAll: true,
 		dragAndDropController: explorerProvider
 	});
 	context.subscriptions.push(treeView);
+
+	// Auto-connect when a connection node is expanded.
+	// This removes the friction of needing to right-click > Connect before databases load.
+	const autoConnectInFlight = new Map<string, Promise<void>>();
+	const ensureConnected = async (node: TreeNode): Promise<void> => {
+		if (!node.connectionId) {
+			return;
+		}
+		if (connectionManager.isConnected(node.connectionId)) {
+			return;
+		}
+
+		const existing = autoConnectInFlight.get(node.connectionId);
+		if (existing) {
+			await existing;
+			return;
+		}
+
+		const task = (async () => {
+			const connection = await connectionStorage.getConnection(node.connectionId!);
+			if (!connection) {
+				return;
+			}
+
+			try {
+				await vscode.window.withProgress(
+					{
+						location: vscode.ProgressLocation.Notification,
+						title: `Connecting to ${connection.name}...`,
+						cancellable: false
+					},
+					async () => {
+						await connectionManager.connect(connection);
+					}
+				);
+				// Refresh so connection indicator and children update.
+				explorerProvider.refresh();
+			} catch (error: any) {
+				const message = error?.message ?? String(error);
+				vscode.window.showErrorMessage(`Failed to connect: ${message}`);
+			}
+		})();
+
+		autoConnectInFlight.set(node.connectionId, task);
+		try {
+			await task;
+		} finally {
+			autoConnectInFlight.delete(node.connectionId);
+		}
+	};
+
+	context.subscriptions.push(
+		treeView.onDidExpandElement(async (e) => {
+			const node = e.element;
+			if (node?.contextValue !== 'connection') {
+				return;
+			}
+			await ensureConnected(node);
+		})
+	);
 
 	// Track selection so AI/features can use current connection/database context.
 	context.subscriptions.push(

@@ -18,6 +18,18 @@ export class TreeNode extends vscode.TreeItem {
     ) {
         super(label, collapsibleState);
         this.tooltip = tooltipText ?? this.label;
+
+        // Provide a stable id so VS Code can preserve expansion state across refreshes.
+        // Without this, calling refresh() (e.g. after auto-connect) may collapse nodes.
+        const idParts: string[] = [contextValue];
+        if (connectionId) idParts.push(connectionId);
+        if (database) idParts.push(database);
+        if (schema) idParts.push(schema);
+        if (objectName) idParts.push(objectName);
+        // Connection labels can change when we show connected indicator, so avoid using label for those.
+        if (contextValue !== 'connection') idParts.push(label);
+        this.id = idParts.join('::');
+
         if (iconPath) {
             this.iconPath = iconPath;
         }
