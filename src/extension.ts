@@ -6,6 +6,7 @@ import { ConnectionManager } from './managers/ConnectionManager';
 import { SqlExplorerProvider, TreeNode } from './providers/SqlExplorerProvider';
 import { QueryResultProvider } from './providers/QueryResultProvider';
 import { ViewDataProvider } from './providers/ViewDataProvider';
+import { AggregateDataProvider } from './providers/AggregateDataProvider';
 import { CommandHandler } from './commands/CommandHandler';
 import { ActiveDbContext } from './context/ActiveDbContext';
 import { AiSqlChatParticipant } from './chat/AiSqlChatParticipant';
@@ -22,13 +23,15 @@ export function activate(context: vscode.ExtensionContext) {
 	const explorerProvider = new SqlExplorerProvider(connectionStorage, connectionManager);
 	const queryResultProvider = new QueryResultProvider(context);
 	const viewDataProvider = new ViewDataProvider(context, connectionStorage, connectionManager);
+	const aggregateDataProvider = new AggregateDataProvider(context, connectionStorage, connectionManager);
 	const commandHandler = new CommandHandler(
 		context,
 		connectionStorage,
 		connectionManager,
 		explorerProvider,
 		queryResultProvider,
-		viewDataProvider
+		viewDataProvider,
+		aggregateDataProvider
 	);
 
 	// Register tree view
@@ -187,6 +190,18 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.commands.registerCommand('sql-client.viewTableData', (node) => 
 			commandHandler.viewTableData(node)
+		)
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('sql-client.aggregateTableData', (node) => 
+			commandHandler.aggregateTableData(node)
+		)
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('sql-client.aggregateFieldData', (node) => 
+			commandHandler.aggregateFieldData(node)
 		)
 	);
 

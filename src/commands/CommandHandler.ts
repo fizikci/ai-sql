@@ -7,6 +7,7 @@ import { IDatabaseConnector } from '../connectors/IDatabaseConnector';
 import { SqlExplorerProvider, TreeNode } from '../providers/SqlExplorerProvider';
 import { QueryResultProvider } from '../providers/QueryResultProvider';
 import { ViewDataProvider } from '../providers/ViewDataProvider';
+import { AggregateDataProvider } from '../providers/AggregateDataProvider';
 import { MetadataStorage } from '../storage/metadataStorage';
 import { ActiveDbContext } from '../context/ActiveDbContext';
 
@@ -20,7 +21,8 @@ export class CommandHandler {
         private connectionManager: ConnectionManager,
         private explorerProvider: SqlExplorerProvider,
         private queryResultProvider: QueryResultProvider,
-        private viewDataProvider: ViewDataProvider
+        private viewDataProvider: ViewDataProvider,
+        private aggregateDataProvider: AggregateDataProvider
     ) {}
 
     private async ensureConnected(connectionId: string): Promise<void> {
@@ -388,6 +390,53 @@ ORDER BY
             });
         } catch (error) {
             vscode.window.showErrorMessage(`Failed to open View Data: ${error}`);
+        }
+    }
+
+    async aggregateTableData(node: TreeNode): Promise<void> {
+        if (!node.connectionId || !node.objectName) {
+            return;
+        }
+
+        const tableDisplayName = node.schema ? `${node.schema}.${node.objectName}` : node.objectName;
+        try {
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: `Opening aggregate view for ${tableDisplayName}...`,
+                cancellable: false
+            }, async () => {
+                await this.aggregateDataProvider.showTable(node.connectionId!, node.database, node.schema, node.objectName!);
+            });
+        } catch (error) {
+            vscode.window.showErrorMessage(`Failed to open Aggregate View: ${error}`);
+        }
+    }
+
+    async aggregateFieldData(node: TreeNode): Promise<void> {
+        if (!node.connectionId || !node.objectName || !node.tableName) {
+            return;
+        }
+
+        const tableDisplayName = node.schema ? `${node.schema}.${node.tableName}` : node.tableName;
+        try {
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: `Opening aggregate view for ${tableDisplayName}...`,
+                cancellable: false
+            }, async () => {
+                await this.aggregateDataProvider.showTable(
+                    node.connectionId!,
+                    node.database,
+                    node.schema,
+                    node.tableName!,
+                    {
+                        initialAggregations: [{ field: node.objectName, func: 'none' }],
+                        includeCountAll: true
+                    }
+                );
+            });
+        } catch (error) {
+            vscode.window.showErrorMessage(`Failed to open Aggregate View: ${error}`);
         }
     }
 

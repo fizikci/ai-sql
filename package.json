@@ -102,6 +102,16 @@
         "icon": "$(table)"
       },
       {
+        "command": "sql-client.aggregateTableData",
+        "title": "Aggregate Data",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "sql-client.aggregateFieldData",
+        "title": "Aggregate Field",
+        "icon": "$(graph)"
+      },
+      {
         "command": "sql-client.editTable",
         "title": "Edit Table",
         "icon": "$(edit)"
@@ -189,6 +199,14 @@
         {
           "command": "sql-client.viewTableData",
           "when": "view == sqlExplorer && viewItem == table"
+        },
+        {
+          "command": "sql-client.aggregateTableData",
+          "when": "view == sqlExplorer && viewItem == table"
+        },
+        {
+          "command": "sql-client.aggregateFieldData",
+          "when": "view == sqlExplorer && viewItem == column"
         },
         {
           "command": "sql-client.editTable",
