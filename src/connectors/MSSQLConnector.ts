@@ -82,12 +82,62 @@ export class MSSQLConnector implements IDatabaseConnector {
         return `[${identifier.replace(/]/g, ']]')}]`;
     }
 
+    private escapeSqlString(value: string): string {
+        return String(value).replace(/'/g, "''");
+    }
+
+    private formatQualifiedName(objectName: string, schema?: string): string {
+        const schemaName = schema || 'dbo';
+        return `${this.quoteIdentifier(schemaName)}.${this.quoteIdentifier(objectName)}`;
+    }
+
+    private getDatabasePrefix(database?: string): string {
+        return database ? `USE ${this.quoteIdentifier(database)};\n` : '';
+    }
+
     getTableDataQuery(tableName: string, schema?: string, limit: number = 1000): string {
         const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : 1000;
         const fromTarget = schema
             ? `${this.quoteIdentifier(schema)}.${this.quoteIdentifier(tableName)}`
             : this.quoteIdentifier(tableName);
         return `SELECT TOP (${safeLimit}) * FROM ${fromTarget}`;
+    }
+
+    getRenameTableQuery(tableName: string, newName: string, schema?: string, database?: string): string {
+        const target = this.formatQualifiedName(tableName, schema);
+        const prefix = this.getDatabasePrefix(database);
+        return `${prefix}EXEC sp_rename N'${this.escapeSqlString(target)}', N'${this.escapeSqlString(newName)}';`;
+    }
+
+    getDropTableQuery(tableName: string, schema?: string, database?: string): string {
+        const target = this.formatQualifiedName(tableName, schema);
+        const prefix = this.getDatabasePrefix(database);
+        return `${prefix}DROP TABLE ${target};`;
+    }
+
+    getRenameViewQuery(viewName: string, newName: string, schema?: string, database?: string): string {
+        const target = this.formatQualifiedName(viewName, schema);
+        const prefix = this.getDatabasePrefix(database);
+        return `${prefix}EXEC sp_rename N'${this.escapeSqlString(target)}', N'${this.escapeSqlString(newName)}';`;
+    }
+
+    getDropViewQuery(viewName: string, schema?: string, database?: string): string {
+        const target = this.formatQualifiedName(viewName, schema);
+        const prefix = this.getDatabasePrefix(database);
+        return `${prefix}DROP VIEW ${target};`;
+    }
+
+    getRenameColumnQuery(tableName: string, columnName: string, newName: string, schema?: string, database?: string): string {
+        const tableRef = this.formatQualifiedName(tableName, schema);
+        const full = `${tableRef}.${this.quoteIdentifier(columnName)}`;
+        const prefix = this.getDatabasePrefix(database);
+        return `${prefix}EXEC sp_rename N'${this.escapeSqlString(full)}', N'${this.escapeSqlString(newName)}', 'COLUMN';`;
+    }
+
+    getDropColumnQuery(tableName: string, columnName: string, schema?: string, database?: string): string {
+        const tableRef = this.formatQualifiedName(tableName, schema);
+        const prefix = this.getDatabasePrefix(database);
+        return `${prefix}ALTER TABLE ${tableRef} DROP COLUMN ${this.quoteIdentifier(columnName)};`;
     }
 
     async getDatabases(): Promise<string[]> {

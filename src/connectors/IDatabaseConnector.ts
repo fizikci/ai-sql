@@ -18,6 +18,12 @@ export interface IDatabaseConnector {
      * Implementations must properly quote identifiers.
      */
     getTableDataQuery(tableName: string, schema?: string, limit?: number): string;
+    getRenameTableQuery(tableName: string, newName: string, schema?: string, database?: string): string;
+    getDropTableQuery(tableName: string, schema?: string, database?: string): string;
+    getRenameViewQuery(viewName: string, newName: string, schema?: string, database?: string): string;
+    getDropViewQuery(viewName: string, schema?: string, database?: string): string;
+    getRenameColumnQuery(tableName: string, columnName: string, newName: string, schema?: string, database?: string): string;
+    getDropColumnQuery(tableName: string, columnName: string, schema?: string, database?: string): string;
 
     getDatabases(): Promise<string[]>;
     getTables(database?: string): Promise<DatabaseObject[]>;

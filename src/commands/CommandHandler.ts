@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import { ConnectionConfig, DatabaseType } from '../models/connection';
 import { ConnectionStorage } from '../storage/connectionStorage';
 import { ConnectionManager } from '../managers/ConnectionManager';
+import { ConnectorFactory } from '../connectors/ConnectorFactory';
+import { IDatabaseConnector } from '../connectors/IDatabaseConnector';
 import { SqlExplorerProvider, TreeNode } from '../providers/SqlExplorerProvider';
 import { QueryResultProvider } from '../providers/QueryResultProvider';
 import { ViewDataProvider } from '../providers/ViewDataProvider';
@@ -435,6 +437,188 @@ ORDER BY
         });
 
         return script;
+    }
+
+    private async openSqlDocument(sql: string, connectionId?: string): Promise<void> {
+        const doc = await vscode.workspace.openTextDocument({
+            language: 'sql',
+            content: sql
+        });
+
+        await vscode.window.showTextDocument(doc);
+
+        if (connectionId) {
+            this.context.workspaceState.update(
+                `activeConnection:${doc.uri.toString()}`,
+                connectionId
+            );
+        }
+    }
+
+    private async getSqlConnector(connectionId: string): Promise<IDatabaseConnector | undefined> {
+        const existing = this.connectionManager.getConnection(connectionId);
+        if (existing) {
+            return existing;
+        }
+
+        const connection = await this.connectionStorage.getConnection(connectionId);
+        if (!connection) {
+            return undefined;
+        }
+
+        return ConnectorFactory.createConnector(connection);
+    }
+
+    async renameTable(node: TreeNode): Promise<void> {
+        if (!node.connectionId || !node.objectName) {
+            return;
+        }
+
+        const newName = await vscode.window.showInputBox({
+            prompt: `New name for table "${node.objectName}"`,
+            value: node.objectName
+        });
+
+        if (!newName || newName.trim() === node.objectName) {
+            return;
+        }
+
+        const connector = await this.getSqlConnector(node.connectionId);
+        if (!connector) {
+            vscode.window.showErrorMessage('Connection not found');
+            return;
+        }
+
+        const sql = connector.getRenameTableQuery(
+            node.objectName,
+            newName.trim(),
+            node.schema,
+            node.database
+        );
+
+        await this.openSqlDocument(sql, node.connectionId);
+    }
+
+    async dropTable(node: TreeNode): Promise<void> {
+        if (!node.connectionId || !node.objectName) {
+            return;
+        }
+
+        const connector = await this.getSqlConnector(node.connectionId);
+        if (!connector) {
+            vscode.window.showErrorMessage('Connection not found');
+            return;
+        }
+
+        const sql = connector.getDropTableQuery(
+            node.objectName,
+            node.schema,
+            node.database
+        );
+
+        await this.openSqlDocument(sql, node.connectionId);
+    }
+
+    async renameView(node: TreeNode): Promise<void> {
+        if (!node.connectionId || !node.objectName) {
+            return;
+        }
+
+        const newName = await vscode.window.showInputBox({
+            prompt: `New name for view "${node.objectName}"`,
+            value: node.objectName
+        });
+
+        if (!newName || newName.trim() === node.objectName) {
+            return;
+        }
+
+        const connector = await this.getSqlConnector(node.connectionId);
+        if (!connector) {
+            vscode.window.showErrorMessage('Connection not found');
+            return;
+        }
+
+        const sql = connector.getRenameViewQuery(
+            node.objectName,
+            newName.trim(),
+            node.schema,
+            node.database
+        );
+
+        await this.openSqlDocument(sql, node.connectionId);
+    }
+
+    async dropView(node: TreeNode): Promise<void> {
+        if (!node.connectionId || !node.objectName) {
+            return;
+        }
+
+        const connector = await this.getSqlConnector(node.connectionId);
+        if (!connector) {
+            vscode.window.showErrorMessage('Connection not found');
+            return;
+        }
+
+        const sql = connector.getDropViewQuery(
+            node.objectName,
+            node.schema,
+            node.database
+        );
+
+        await this.openSqlDocument(sql, node.connectionId);
+    }
+
+    async renameColumn(node: TreeNode): Promise<void> {
+        if (!node.connectionId || !node.objectName || !node.tableName) {
+            return;
+        }
+
+        const newName = await vscode.window.showInputBox({
+            prompt: `New name for column "${node.objectName}"`,
+            value: node.objectName
+        });
+
+        if (!newName || newName.trim() === node.objectName) {
+            return;
+        }
+
+        const connector = await this.getSqlConnector(node.connectionId);
+        if (!connector) {
+            vscode.window.showErrorMessage('Connection not found');
+            return;
+        }
+
+        const sql = connector.getRenameColumnQuery(
+            node.tableName,
+            node.objectName,
+            newName.trim(),
+            node.schema,
+            node.database
+        );
+
+        await this.openSqlDocument(sql, node.connectionId);
+    }
+
+    async dropColumn(node: TreeNode): Promise<void> {
+        if (!node.connectionId || !node.objectName || !node.tableName) {
+            return;
+        }
+
+        const connector = await this.getSqlConnector(node.connectionId);
+        if (!connector) {
+            vscode.window.showErrorMessage('Connection not found');
+            return;
+        }
+
+        const sql = connector.getDropColumnQuery(
+            node.tableName,
+            node.objectName,
+            node.schema,
+            node.database
+        );
+
+        await this.openSqlDocument(sql, node.connectionId);
     }
 
     private getDefaultPort(type: DatabaseType): number {

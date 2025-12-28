@@ -14,7 +14,8 @@ export class TreeNode extends vscode.TreeItem {
         public readonly schema?: string,
         public readonly objectName?: string,
         iconPath?: vscode.ThemeIcon | { light: vscode.Uri; dark: vscode.Uri },
-        tooltipText?: string
+        tooltipText?: string,
+        public readonly tableName?: string
     ) {
         super(label, collapsibleState);
         this.tooltip = tooltipText ?? this.label;
@@ -26,6 +27,7 @@ export class TreeNode extends vscode.TreeItem {
         if (database) idParts.push(database);
         if (schema) idParts.push(schema);
         if (objectName) idParts.push(objectName);
+        if (tableName) idParts.push(tableName);
         // Connection labels can change when we show connected indicator, so avoid using label for those.
         if (contextValue !== 'connection') idParts.push(label);
         this.id = idParts.join('::');
@@ -578,7 +580,8 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
                     element.schema,
                     col.name,
                     new vscode.ThemeIcon('symbol-field'),
-                    tooltip
+                    tooltip,
+                    element.objectName
                 );
             });
         } catch (error) {

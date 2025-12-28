@@ -202,6 +202,42 @@ export function activate(context: vscode.ExtensionContext) {
 		)
 	);
 
+	context.subscriptions.push(
+		vscode.commands.registerCommand('sql-client.renameTable', (node) =>
+			commandHandler.renameTable(node)
+		)
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('sql-client.dropTable', (node) =>
+			commandHandler.dropTable(node)
+		)
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('sql-client.renameView', (node) =>
+			commandHandler.renameView(node)
+		)
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('sql-client.dropView', (node) =>
+			commandHandler.dropView(node)
+		)
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('sql-client.renameColumn', (node) =>
+			commandHandler.renameColumn(node)
+		)
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('sql-client.dropColumn', (node) =>
+			commandHandler.dropColumn(node)
+		)
+	);
+
 	vscode.window.showInformationMessage('SQL Client is ready!');
 }
 
@@ -210,4 +246,3 @@ export async function deactivate() {
 	const connectionManager = ConnectionManager.getInstance();
 	await connectionManager.disconnectAll();
 }
-

@@ -72,6 +72,12 @@ export class PostgreSQLConnector implements IDatabaseConnector {
         return `"${identifier.replace(/"/g, '""')}"`;
     }
 
+    private formatQualifiedName(objectName: string, schema?: string): string {
+        return schema
+            ? `${this.quoteIdentifier(schema)}.${this.quoteIdentifier(objectName)}`
+            : this.quoteIdentifier(objectName);
+    }
+
     private normalizeStringArray(value: unknown): string[] {
         if (Array.isArray(value)) {
             return value.map(v => String(v));
@@ -154,6 +160,36 @@ export class PostgreSQLConnector implements IDatabaseConnector {
             ? `${this.quoteIdentifier(schema)}.${this.quoteIdentifier(tableName)}`
             : this.quoteIdentifier(tableName);
         return `SELECT * FROM ${fromTarget} LIMIT ${safeLimit}`;
+    }
+
+    getRenameTableQuery(tableName: string, newName: string, schema?: string, _database?: string): string {
+        const target = this.formatQualifiedName(tableName, schema);
+        return `ALTER TABLE ${target} RENAME TO ${this.quoteIdentifier(newName)};`;
+    }
+
+    getDropTableQuery(tableName: string, schema?: string, _database?: string): string {
+        const target = this.formatQualifiedName(tableName, schema);
+        return `DROP TABLE ${target};`;
+    }
+
+    getRenameViewQuery(viewName: string, newName: string, schema?: string, _database?: string): string {
+        const target = this.formatQualifiedName(viewName, schema);
+        return `ALTER VIEW ${target} RENAME TO ${this.quoteIdentifier(newName)};`;
+    }
+
+    getDropViewQuery(viewName: string, schema?: string, _database?: string): string {
+        const target = this.formatQualifiedName(viewName, schema);
+        return `DROP VIEW ${target};`;
+    }
+
+    getRenameColumnQuery(tableName: string, columnName: string, newName: string, schema?: string, _database?: string): string {
+        const target = this.formatQualifiedName(tableName, schema);
+        return `ALTER TABLE ${target} RENAME COLUMN ${this.quoteIdentifier(columnName)} TO ${this.quoteIdentifier(newName)};`;
+    }
+
+    getDropColumnQuery(tableName: string, columnName: string, schema?: string, _database?: string): string {
+        const target = this.formatQualifiedName(tableName, schema);
+        return `ALTER TABLE ${target} DROP COLUMN ${this.quoteIdentifier(columnName)};`;
     }
 
     async getDatabases(): Promise<string[]> {

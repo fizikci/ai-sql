@@ -2,7 +2,7 @@
   "name": "ai-sql",
   "displayName": "SQL with AI",
   "description": "SQL Client for SQL Server, PostgreSQL, and MySQL powered with AI capabilities",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "bulentkeskin",
   "icon": "resources/icon.png",
   "repository": {
@@ -112,6 +112,36 @@
         "icon": "$(folder)"
       },
       {
+        "command": "sql-client.renameTable",
+        "title": "Rename Table...",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "sql-client.dropTable",
+        "title": "Drop Table...",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "sql-client.renameView",
+        "title": "Rename View...",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "sql-client.dropView",
+        "title": "Drop View...",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "sql-client.renameColumn",
+        "title": "Rename Field...",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "sql-client.dropColumn",
+        "title": "Drop Field...",
+        "icon": "$(trash)"
+      },
+      {
         "command": "sql-client.refreshExplorer",
         "title": "Refresh Explorer",
         "icon": "$(refresh)"
@@ -167,6 +197,30 @@
         {
           "command": "sql-client.groupTable",
           "when": "view == sqlExplorer && viewItem == table"
+        },
+        {
+          "command": "sql-client.renameTable",
+          "when": "view == sqlExplorer && viewItem == table"
+        },
+        {
+          "command": "sql-client.dropTable",
+          "when": "view == sqlExplorer && viewItem == table"
+        },
+        {
+          "command": "sql-client.renameView",
+          "when": "view == sqlExplorer && viewItem == view"
+        },
+        {
+          "command": "sql-client.dropView",
+          "when": "view == sqlExplorer && viewItem == view"
+        },
+        {
+          "command": "sql-client.renameColumn",
+          "when": "view == sqlExplorer && viewItem == column"
+        },
+        {
+          "command": "sql-client.dropColumn",
+          "when": "view == sqlExplorer && viewItem == column"
         }
       ],
       "editor/title": [
