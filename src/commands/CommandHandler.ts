@@ -417,7 +417,10 @@ ORDER BY
             return;
         }
 
-        const tableDisplayName = node.schema ? `${node.schema}.${node.tableName}` : node.tableName;
+        const connectionId = node.connectionId;
+        const tableName = node.tableName;
+        const fieldName = node.objectName;
+        const tableDisplayName = node.schema ? `${node.schema}.${tableName}` : tableName;
         try {
             await vscode.window.withProgress({
                 location: vscode.ProgressLocation.Notification,
@@ -425,12 +428,12 @@ ORDER BY
                 cancellable: false
             }, async () => {
                 await this.aggregateDataProvider.showTable(
-                    node.connectionId!,
+                    connectionId,
                     node.database,
                     node.schema,
-                    node.tableName!,
+                    tableName,
                     {
-                        initialAggregations: [{ field: node.objectName, func: 'none' }],
+                        initialAggregations: [{ field: fieldName, func: 'none' }],
                         includeCountAll: true
                     }
                 );
