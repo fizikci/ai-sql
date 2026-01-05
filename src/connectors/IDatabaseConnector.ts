@@ -26,13 +26,14 @@ export interface IDatabaseConnector {
     getDropColumnQuery(tableName: string, columnName: string, schema?: string, database?: string): string;
 
     getDatabases(): Promise<string[]>;
-    getTables(database?: string): Promise<DatabaseObject[]>;
-    getViews(database?: string): Promise<DatabaseObject[]>;
-    getProcedures(database?: string): Promise<DatabaseObject[]>;
-    getFunctions(database?: string): Promise<DatabaseObject[]>;
-    getTableDetails(tableName: string, schema?: string): Promise<TableDetails>;
-    getColumns(tableName: string, schema?: string): Promise<Column[]>;
-    getIndexes(tableName: string, schema?: string): Promise<Index[]>;
-    getConstraints(tableName: string, schema?: string): Promise<Constraint[]>;
+    getSchemas(database?: string): Promise<string[]>;
+    getTables(database?: string, schema?: string): Promise<DatabaseObject[]>;
+    getViews(database?: string, schema?: string): Promise<DatabaseObject[]>;
+    getProcedures(database?: string, schema?: string): Promise<DatabaseObject[]>;
+    getFunctions(database?: string, schema?: string): Promise<DatabaseObject[]>;
+    getTableDetails(tableName: string, schema?: string, database?: string): Promise<TableDetails>;
+    getColumns(tableName: string, schema?: string, database?: string): Promise<Column[]>;
+    getIndexes(tableName: string, schema?: string, database?: string): Promise<Index[]>;
+    getConstraints(tableName: string, schema?: string, database?: string): Promise<Constraint[]>;
     testConnection(): Promise<boolean>;
 }

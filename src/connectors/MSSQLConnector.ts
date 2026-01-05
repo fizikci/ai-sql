@@ -151,14 +151,31 @@ export class MSSQLConnector implements IDatabaseConnector {
         return result.rows.map(row => row.name);
     }
 
-    async getTables(database?: string): Promise<DatabaseObject[]> {
-        const dbClause = database ? `USE [${database}];` : '';
+    async getSchemas(database?: string): Promise<string[]> {
+        const dbClause = database ? `USE ${this.quoteIdentifier(database)};` : '';
+        const result = await this.executeQuery(`
+            ${dbClause}
+            SELECT name
+            FROM sys.schemas
+            WHERE name NOT IN ('sys', 'INFORMATION_SCHEMA', 'db_owner', 'db_accessadmin', 
+                               'db_securityadmin', 'db_ddladmin', 'db_backupoperator', 
+                               'db_datareader', 'db_datawriter', 'db_denydatareader', 
+                               'db_denydatawriter', 'guest')
+            ORDER BY name
+        `);
+        return result.rows.map(row => row.name);
+    }
+
+    async getTables(database?: string, schema?: string): Promise<DatabaseObject[]> {
+        const dbClause = database ? `USE ${this.quoteIdentifier(database)};` : '';
+        const schemaFilter = schema ? `WHERE SCHEMA_NAME(schema_id) = '${this.escapeSqlString(schema)}'` : '';
         const result = await this.executeQuery(`
             ${dbClause}
             SELECT 
                 SCHEMA_NAME(schema_id) as schema_name,
                 name
             FROM sys.tables
+            ${schemaFilter}
             ORDER BY schema_name, name
         `);
         
@@ -169,14 +186,16 @@ export class MSSQLConnector implements IDatabaseConnector {
         }));
     }
 
-    async getViews(database?: string): Promise<DatabaseObject[]> {
-        const dbClause = database ? `USE [${database}];` : '';
+    async getViews(database?: string, schema?: string): Promise<DatabaseObject[]> {
+        const dbClause = database ? `USE ${this.quoteIdentifier(database)};` : '';
+        const schemaFilter = schema ? `WHERE SCHEMA_NAME(schema_id) = '${this.escapeSqlString(schema)}'` : '';
         const result = await this.executeQuery(`
             ${dbClause}
             SELECT 
                 SCHEMA_NAME(schema_id) as schema_name,
                 name
             FROM sys.views
+            ${schemaFilter}
             ORDER BY schema_name, name
         `);
         
@@ -187,8 +206,9 @@ export class MSSQLConnector implements IDatabaseConnector {
         }));
     }
 
-    async getProcedures(database?: string): Promise<DatabaseObject[]> {
-        const dbClause = database ? `USE [${database}];` : '';
+    async getProcedures(database?: string, schema?: string): Promise<DatabaseObject[]> {
+        const dbClause = database ? `USE ${this.quoteIdentifier(database)};` : '';
+        const schemaFilter = schema ? `AND SCHEMA_NAME(schema_id) = '${this.escapeSqlString(schema)}'` : '';
         const result = await this.executeQuery(`
             ${dbClause}
             SELECT 
@@ -196,6 +216,7 @@ export class MSSQLConnector implements IDatabaseConnector {
                 name
             FROM sys.procedures
             WHERE type = 'P'
+            ${schemaFilter}
             ORDER BY schema_name, name
         `);
         
@@ -206,8 +227,9 @@ export class MSSQLConnector implements IDatabaseConnector {
         }));
     }
 
-    async getFunctions(database?: string): Promise<DatabaseObject[]> {
-        const dbClause = database ? `USE [${database}];` : '';
+    async getFunctions(database?: string, schema?: string): Promise<DatabaseObject[]> {
+        const dbClause = database ? `USE ${this.quoteIdentifier(database)};` : '';
+        const schemaFilter = schema ? `AND SCHEMA_NAME(schema_id) = '${this.escapeSqlString(schema)}'` : '';
         const result = await this.executeQuery(`
             ${dbClause}
             SELECT 
@@ -215,6 +237,7 @@ export class MSSQLConnector implements IDatabaseConnector {
                 name
             FROM sys.objects
             WHERE type IN ('FN', 'IF', 'TF')
+            ${schemaFilter}
             ORDER BY schema_name, name
         `);
         
@@ -225,8 +248,10 @@ export class MSSQLConnector implements IDatabaseConnector {
         }));
     }
 
-    async getColumns(tableName: string, schema: string = 'dbo'): Promise<Column[]> {
+    async getColumns(tableName: string, schema: string = 'dbo', database?: string): Promise<Column[]> {
+        const dbClause = database ? `USE ${this.quoteIdentifier(database)};` : '';
         const result = await this.executeQuery(`
+            ${dbClause}
             SELECT 
                 c.name,
                 t.name as data_type,
@@ -266,8 +291,10 @@ export class MSSQLConnector implements IDatabaseConnector {
         }));
     }
 
-    async getIndexes(tableName: string, schema: string = 'dbo'): Promise<Index[]> {
+    async getIndexes(tableName: string, schema: string = 'dbo', database?: string): Promise<Index[]> {
+        const dbClause = database ? `USE ${this.quoteIdentifier(database)};` : '';
         const result = await this.executeQuery(`
+            ${dbClause}
             SELECT 
                 i.name,
                 i.is_unique,
@@ -291,8 +318,10 @@ export class MSSQLConnector implements IDatabaseConnector {
         }));
     }
 
-    async getConstraints(tableName: string, schema: string = 'dbo'): Promise<Constraint[]> {
+    async getConstraints(tableName: string, schema: string = 'dbo', database?: string): Promise<Constraint[]> {
+        const dbClause = database ? `USE ${this.quoteIdentifier(database)};` : '';
         const result = await this.executeQuery(`
+            ${dbClause}
             SELECT 
                 kc.name,
                 kc.type_desc,
@@ -352,11 +381,11 @@ export class MSSQLConnector implements IDatabaseConnector {
         return 'DEFAULT';
     }
 
-    async getTableDetails(tableName: string, schema: string = 'dbo'): Promise<TableDetails> {
+    async getTableDetails(tableName: string, schema: string = 'dbo', database?: string): Promise<TableDetails> {
         const [columns, indexes, constraints] = await Promise.all([
-            this.getColumns(tableName, schema),
-            this.getIndexes(tableName, schema),
-            this.getConstraints(tableName, schema)
+            this.getColumns(tableName, schema, database),
+            this.getIndexes(tableName, schema, database),
+            this.getConstraints(tableName, schema, database)
         ]);
 
         return {

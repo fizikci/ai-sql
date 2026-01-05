@@ -34,6 +34,38 @@ export class PostgreSQLConnector implements IDatabaseConnector {
         return this.client !== undefined;
     }
 
+    private async withDatabase<T>(database: string | undefined, fn: () => Promise<T>): Promise<T> {
+        // Helper to execute a function while connected to a specific database
+        const targetDb = database || this.connectionConfig.database || 'postgres';
+        const currentDb = this.connectionConfig.database || 'postgres';
+        
+        if (targetDb === currentDb) {
+            // Already connected to the right database
+            return fn();
+        }
+
+        // Need to switch databases temporarily
+        await this.disconnect();
+        const tempClient = new Client({
+            host: this.connectionConfig.host,
+            port: this.connectionConfig.port,
+            user: this.connectionConfig.username,
+            password: this.connectionConfig.password,
+            database: targetDb,
+            ssl: this.connectionConfig.ssl ? { rejectUnauthorized: false } : false
+        });
+        await tempClient.connect();
+        this.client = tempClient;
+
+        try {
+            return await fn();
+        } finally {
+            // Reconnect to the original database
+            await this.disconnect();
+            await this.connect();
+        }
+    }
+
     async testConnection(): Promise<boolean> {
         try {
             await this.connect();
@@ -202,193 +234,229 @@ export class PostgreSQLConnector implements IDatabaseConnector {
         return result.rows.map(row => row.datname);
     }
 
-    async getTables(database?: string): Promise<DatabaseObject[]> {
-        const result = await this.executeQuery(`
-            SELECT 
-                schemaname as schema_name,
-                tablename as name
-            FROM pg_tables
-            WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
-            ORDER BY schemaname, tablename
-        `);
-        
-        return result.rows.map(row => ({
-            name: row.name,
-            schema: row.schema_name,
-            type: 'table' as const
-        }));
+    async getSchemas(database?: string): Promise<string[]> {
+        // In PostgreSQL, schemas exist within a database context.
+        // We need to be connected to the target database to see its schemas.
+        return this.withDatabase(database, async () => {
+            const result = await this.executeQuery(`
+                SELECT schema_name
+                FROM information_schema.schemata
+                WHERE schema_name NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+                ORDER BY schema_name
+            `);
+            return result.rows.map(row => row.schema_name);
+        });
     }
 
-    async getViews(database?: string): Promise<DatabaseObject[]> {
-        const result = await this.executeQuery(`
-            SELECT 
-                schemaname as schema_name,
-                viewname as name
-            FROM pg_views
-            WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
-            ORDER BY schemaname, viewname
-        `);
-        
-        return result.rows.map(row => ({
-            name: row.name,
-            schema: row.schema_name,
-            type: 'view' as const
-        }));
+    async getTables(database?: string, schema?: string): Promise<DatabaseObject[]> {
+        return this.withDatabase(database, async () => {
+            const schemaFilter = schema ? `AND schemaname = '${schema.replace(/'/g, "''")}'` : '';
+            const result = await this.executeQuery(`
+                SELECT 
+                    schemaname as schema_name,
+                    tablename as name
+                FROM pg_tables
+                WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
+                ${schemaFilter}
+                ORDER BY schemaname, tablename
+            `);
+            
+            return result.rows.map(row => ({
+                name: row.name,
+                schema: row.schema_name,
+                type: 'table' as const
+            }));
+        });
     }
 
-    async getProcedures(database?: string): Promise<DatabaseObject[]> {
-        const result = await this.executeQuery(`
-            SELECT 
-                n.nspname as schema_name,
-                p.proname as name
-            FROM pg_proc p
-            JOIN pg_namespace n ON p.pronamespace = n.oid
-            WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-            AND p.prokind = 'p'
-            ORDER BY n.nspname, p.proname
-        `);
-        
-        return result.rows.map(row => ({
-            name: row.name,
-            schema: row.schema_name,
-            type: 'procedure' as const
-        }));
+    async getViews(database?: string, schema?: string): Promise<DatabaseObject[]> {
+        return this.withDatabase(database, async () => {
+            const schemaFilter = schema ? `AND schemaname = '${schema.replace(/'/g, "''")}'` : '';
+            const result = await this.executeQuery(`
+                SELECT 
+                    schemaname as schema_name,
+                    viewname as name
+                FROM pg_views
+                WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
+                ${schemaFilter}
+                ORDER BY schemaname, viewname
+            `);
+            
+            return result.rows.map(row => ({
+                name: row.name,
+                schema: row.schema_name,
+                type: 'view' as const
+            }));
+        });
     }
 
-    async getFunctions(database?: string): Promise<DatabaseObject[]> {
-        const result = await this.executeQuery(`
-            SELECT 
-                n.nspname as schema_name,
-                p.proname as name
-            FROM pg_proc p
-            JOIN pg_namespace n ON p.pronamespace = n.oid
-            WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-            AND p.prokind = 'f'
-            ORDER BY n.nspname, p.proname
-        `);
-        
-        return result.rows.map(row => ({
-            name: row.name,
-            schema: row.schema_name,
-            type: 'function' as const
-        }));
+    async getProcedures(database?: string, schema?: string): Promise<DatabaseObject[]> {
+        return this.withDatabase(database, async () => {
+            const schemaFilter = schema ? `AND n.nspname = '${schema.replace(/'/g, "''")}'` : '';
+            const result = await this.executeQuery(`
+                SELECT 
+                    n.nspname as schema_name,
+                    p.proname as name
+                FROM pg_proc p
+                JOIN pg_namespace n ON p.pronamespace = n.oid
+                WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+                AND p.prokind = 'p'
+                ${schemaFilter}
+                ORDER BY n.nspname, p.proname
+            `);
+            
+            return result.rows.map(row => ({
+                name: row.name,
+                schema: row.schema_name,
+                type: 'procedure' as const
+            }));
+        });
     }
 
-    async getColumns(tableName: string, schema: string = 'public'): Promise<Column[]> {
-        const result = await this.executeQuery(`
-            SELECT 
-                c.column_name,
-                c.data_type,
-                c.is_nullable = 'YES' as is_nullable,
-                c.column_default,
-                c.character_maximum_length,
-                c.numeric_precision,
-                c.numeric_scale,
-                CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_primary_key,
-                CASE WHEN fk.column_name IS NOT NULL THEN true ELSE false END as is_foreign_key
-            FROM information_schema.columns c
-            LEFT JOIN (
-                SELECT ku.column_name
+    async getFunctions(database?: string, schema?: string): Promise<DatabaseObject[]> {
+        return this.withDatabase(database, async () => {
+            const schemaFilter = schema ? `AND n.nspname = '${schema.replace(/'/g, "''")}'` : '';
+            const result = await this.executeQuery(`
+                SELECT 
+                    n.nspname as schema_name,
+                    p.proname as name
+                FROM pg_proc p
+                JOIN pg_namespace n ON p.pronamespace = n.oid
+                WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+                AND p.prokind = 'f'
+                ${schemaFilter}
+                ORDER BY n.nspname, p.proname
+            `);
+            
+            return result.rows.map(row => ({
+                name: row.name,
+                schema: row.schema_name,
+                type: 'function' as const
+            }));
+        });
+    }
+
+    async getColumns(tableName: string, schema: string = 'public', database?: string): Promise<Column[]> {
+        return this.withDatabase(database, async () => {
+            const result = await this.executeQuery(`
+                SELECT 
+                    c.column_name,
+                    c.data_type,
+                    c.is_nullable = 'YES' as is_nullable,
+                    c.column_default,
+                    c.character_maximum_length,
+                    c.numeric_precision,
+                    c.numeric_scale,
+                    CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_primary_key,
+                    CASE WHEN fk.column_name IS NOT NULL THEN true ELSE false END as is_foreign_key
+                FROM information_schema.columns c
+                LEFT JOIN (
+                    SELECT ku.column_name
+                    FROM information_schema.table_constraints tc
+                    JOIN information_schema.key_column_usage ku 
+                        ON tc.constraint_name = ku.constraint_name
+                        AND tc.table_schema = ku.table_schema
+                    WHERE tc.constraint_type = 'PRIMARY KEY'
+                    AND tc.table_name = '${tableName}'
+                    AND tc.table_schema = '${schema}'
+                ) pk ON c.column_name = pk.column_name
+                LEFT JOIN (
+                    SELECT ku.column_name
+                    FROM information_schema.table_constraints tc
+                    JOIN information_schema.key_column_usage ku 
+                        ON tc.constraint_name = ku.constraint_name
+                        AND tc.table_schema = ku.table_schema
+                    WHERE tc.constraint_type = 'FOREIGN KEY'
+                    AND tc.table_name = '${tableName}'
+                    AND tc.table_schema = '${schema}'
+                ) fk ON c.column_name = fk.column_name
+                WHERE c.table_name = '${tableName}'
+                AND c.table_schema = '${schema}'
+                ORDER BY c.ordinal_position
+            `);
+
+            return result.rows.map(row => ({
+                name: row.column_name,
+                dataType: row.data_type,
+                nullable: row.is_nullable,
+                maxLength: row.character_maximum_length,
+                precision: row.numeric_precision,
+                scale: row.numeric_scale,
+                isPrimaryKey: row.is_primary_key,
+                isForeignKey: row.is_foreign_key,
+                defaultValue: row.column_default
+            }));
+        });
+    }
+
+    async getIndexes(tableName: string, schema: string = 'public', database?: string): Promise<Index[]> {
+        return this.withDatabase(database, async () => {
+            const result = await this.executeQuery(`
+                SELECT 
+                    i.relname as name,
+                    ix.indisunique as is_unique,
+                    ix.indisprimary as is_primary_key,
+                    am.amname as type,
+                    array_agg(a.attname ORDER BY array_position(ix.indkey, a.attnum)) as columns
+                FROM pg_index ix
+                JOIN pg_class i ON i.oid = ix.indexrelid
+                JOIN pg_class t ON t.oid = ix.indrelid
+                JOIN pg_namespace n ON n.oid = t.relnamespace
+                JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
+                JOIN pg_am am ON am.oid = i.relam
+                WHERE t.relname = '${tableName}'
+                AND n.nspname = '${schema}'
+                GROUP BY i.relname, ix.indisunique, ix.indisprimary, am.amname
+                ORDER BY i.relname
+            `);
+
+            return result.rows.map(row => ({
+                name: row.name,
+                columns: this.normalizeStringArray(row.columns),
+                isUnique: row.is_unique,
+                isPrimaryKey: row.is_primary_key,
+                type: row.type
+            }));
+        });
+    }
+
+    async getConstraints(tableName: string, schema: string = 'public', database?: string): Promise<Constraint[]> {
+        return this.withDatabase(database, async () => {
+            const result = await this.executeQuery(`
+                SELECT 
+                    tc.constraint_name as name,
+                    tc.constraint_type as type,
+                    array_agg(DISTINCT kcu.column_name) as columns,
+                    ccu.table_name as referenced_table,
+                    array_agg(DISTINCT ccu.column_name) as referenced_columns
                 FROM information_schema.table_constraints tc
-                JOIN information_schema.key_column_usage ku 
-                    ON tc.constraint_name = ku.constraint_name
-                    AND tc.table_schema = ku.table_schema
-                WHERE tc.constraint_type = 'PRIMARY KEY'
-                AND tc.table_name = '${tableName}'
+                LEFT JOIN information_schema.key_column_usage kcu 
+                    ON tc.constraint_name = kcu.constraint_name
+                    AND tc.table_schema = kcu.table_schema
+                LEFT JOIN information_schema.constraint_column_usage ccu 
+                    ON tc.constraint_name = ccu.constraint_name
+                    AND tc.table_schema = ccu.table_schema
+                WHERE tc.table_name = '${tableName}'
                 AND tc.table_schema = '${schema}'
-            ) pk ON c.column_name = pk.column_name
-            LEFT JOIN (
-                SELECT ku.column_name
-                FROM information_schema.table_constraints tc
-                JOIN information_schema.key_column_usage ku 
-                    ON tc.constraint_name = ku.constraint_name
-                    AND tc.table_schema = ku.table_schema
-                WHERE tc.constraint_type = 'FOREIGN KEY'
-                AND tc.table_name = '${tableName}'
-                AND tc.table_schema = '${schema}'
-            ) fk ON c.column_name = fk.column_name
-            WHERE c.table_name = '${tableName}'
-            AND c.table_schema = '${schema}'
-            ORDER BY c.ordinal_position
-        `);
+                GROUP BY tc.constraint_name, tc.constraint_type, ccu.table_name
+                ORDER BY tc.constraint_name
+            `);
 
-        return result.rows.map(row => ({
-            name: row.column_name,
-            dataType: row.data_type,
-            nullable: row.is_nullable,
-            maxLength: row.character_maximum_length,
-            precision: row.numeric_precision,
-            scale: row.numeric_scale,
-            isPrimaryKey: row.is_primary_key,
-            isForeignKey: row.is_foreign_key,
-            defaultValue: row.column_default
-        }));
+            return result.rows.map(row => ({
+                name: row.name,
+                type: row.type as any,
+                columns: this.normalizeStringArray(row.columns),
+                referencedTable: row.referenced_table,
+                referencedColumns: this.normalizeStringArray(row.referenced_columns)
+            }));
+        });
     }
 
-    async getIndexes(tableName: string, schema: string = 'public'): Promise<Index[]> {
-        const result = await this.executeQuery(`
-            SELECT 
-                i.relname as name,
-                ix.indisunique as is_unique,
-                ix.indisprimary as is_primary_key,
-                am.amname as type,
-                array_agg(a.attname ORDER BY array_position(ix.indkey, a.attnum)) as columns
-            FROM pg_index ix
-            JOIN pg_class i ON i.oid = ix.indexrelid
-            JOIN pg_class t ON t.oid = ix.indrelid
-            JOIN pg_namespace n ON n.oid = t.relnamespace
-            JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
-            JOIN pg_am am ON am.oid = i.relam
-            WHERE t.relname = '${tableName}'
-            AND n.nspname = '${schema}'
-            GROUP BY i.relname, ix.indisunique, ix.indisprimary, am.amname
-            ORDER BY i.relname
-        `);
-
-        return result.rows.map(row => ({
-            name: row.name,
-            columns: this.normalizeStringArray(row.columns),
-            isUnique: row.is_unique,
-            isPrimaryKey: row.is_primary_key,
-            type: row.type
-        }));
-    }
-
-    async getConstraints(tableName: string, schema: string = 'public'): Promise<Constraint[]> {
-        const result = await this.executeQuery(`
-            SELECT 
-                tc.constraint_name as name,
-                tc.constraint_type as type,
-                array_agg(DISTINCT kcu.column_name) as columns,
-                ccu.table_name as referenced_table,
-                array_agg(DISTINCT ccu.column_name) as referenced_columns
-            FROM information_schema.table_constraints tc
-            LEFT JOIN information_schema.key_column_usage kcu 
-                ON tc.constraint_name = kcu.constraint_name
-                AND tc.table_schema = kcu.table_schema
-            LEFT JOIN information_schema.constraint_column_usage ccu 
-                ON tc.constraint_name = ccu.constraint_name
-                AND tc.table_schema = ccu.table_schema
-            WHERE tc.table_name = '${tableName}'
-            AND tc.table_schema = '${schema}'
-            GROUP BY tc.constraint_name, tc.constraint_type, ccu.table_name
-            ORDER BY tc.constraint_name
-        `);
-
-        return result.rows.map(row => ({
-            name: row.name,
-            type: row.type as any,
-            columns: this.normalizeStringArray(row.columns),
-            referencedTable: row.referenced_table,
-            referencedColumns: this.normalizeStringArray(row.referenced_columns)
-        }));
-    }
-
-    async getTableDetails(tableName: string, schema: string = 'public'): Promise<TableDetails> {
+    async getTableDetails(tableName: string, schema: string = 'public', database?: string): Promise<TableDetails> {
         const [columns, indexes, constraints] = await Promise.all([
-            this.getColumns(tableName, schema),
-            this.getIndexes(tableName, schema),
-            this.getConstraints(tableName, schema)
+            this.getColumns(tableName, schema, database),
+            this.getIndexes(tableName, schema, database),
+            this.getConstraints(tableName, schema, database)
         ]);
 
         return {

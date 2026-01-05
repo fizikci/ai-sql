@@ -129,8 +129,20 @@ export class MySQLConnector implements IDatabaseConnector {
         return result.rows.map(row => row.name);
     }
 
-    async getTables(database?: string): Promise<DatabaseObject[]> {
-        const dbClause = database ? `AND table_schema = '${database}'` : '';
+    // In MySQL, schemas and databases are synonymous, so this returns databases
+    async getSchemas(database?: string): Promise<string[]> {
+        // If a database is specified, return just that one (as the "schema")
+        // Otherwise return all databases
+        if (database) {
+            return [database];
+        }
+        return this.getDatabases();
+    }
+
+    async getTables(database?: string, schema?: string): Promise<DatabaseObject[]> {
+        // In MySQL, schema is the same as database
+        const targetDb = schema || database;
+        const dbClause = targetDb ? `AND table_schema = '${targetDb.replace(/'/g, "''")}'` : '';
         const result = await this.executeQuery(`
             SELECT 
                 table_schema as schema_name,
@@ -149,8 +161,9 @@ export class MySQLConnector implements IDatabaseConnector {
         }));
     }
 
-    async getViews(database?: string): Promise<DatabaseObject[]> {
-        const dbClause = database ? `AND table_schema = '${database}'` : '';
+    async getViews(database?: string, schema?: string): Promise<DatabaseObject[]> {
+        const targetDb = schema || database;
+        const dbClause = targetDb ? `AND table_schema = '${targetDb.replace(/'/g, "''")}'` : '';
         const result = await this.executeQuery(`
             SELECT 
                 table_schema as schema_name,
@@ -169,8 +182,9 @@ export class MySQLConnector implements IDatabaseConnector {
         }));
     }
 
-    async getProcedures(database?: string): Promise<DatabaseObject[]> {
-        const dbClause = database ? `AND routine_schema = '${database}'` : '';
+    async getProcedures(database?: string, schema?: string): Promise<DatabaseObject[]> {
+        const targetDb = schema || database;
+        const dbClause = targetDb ? `AND routine_schema = '${targetDb.replace(/'/g, "''")}'` : '';
         const result = await this.executeQuery(`
             SELECT 
                 routine_schema as schema_name,
@@ -189,8 +203,9 @@ export class MySQLConnector implements IDatabaseConnector {
         }));
     }
 
-    async getFunctions(database?: string): Promise<DatabaseObject[]> {
-        const dbClause = database ? `AND routine_schema = '${database}'` : '';
+    async getFunctions(database?: string, schema?: string): Promise<DatabaseObject[]> {
+        const targetDb = schema || database;
+        const dbClause = targetDb ? `AND routine_schema = '${targetDb.replace(/'/g, "''")}'` : '';
         const result = await this.executeQuery(`
             SELECT 
                 routine_schema as schema_name,
@@ -209,8 +224,8 @@ export class MySQLConnector implements IDatabaseConnector {
         }));
     }
 
-    async getColumns(tableName: string, schema?: string): Promise<Column[]> {
-        const dbName = schema || this.connectionConfig.database || '';
+    async getColumns(tableName: string, schema?: string, database?: string): Promise<Column[]> {
+        const dbName = database || schema || this.connectionConfig.database || '';
         const result = await this.executeQuery(`
             SELECT 
                 column_name,
@@ -243,8 +258,8 @@ export class MySQLConnector implements IDatabaseConnector {
         }));
     }
 
-    async getIndexes(tableName: string, schema?: string): Promise<Index[]> {
-        const dbName = schema || this.connectionConfig.database || '';
+    async getIndexes(tableName: string, schema?: string, database?: string): Promise<Index[]> {
+        const dbName = database || schema || this.connectionConfig.database || '';
         const result = await this.executeQuery(`
             SELECT 
                 index_name as name,
@@ -268,8 +283,8 @@ export class MySQLConnector implements IDatabaseConnector {
         }));
     }
 
-    async getConstraints(tableName: string, schema?: string): Promise<Constraint[]> {
-        const dbName = schema || this.connectionConfig.database || '';
+    async getConstraints(tableName: string, schema?: string, database?: string): Promise<Constraint[]> {
+        const dbName = database || schema || this.connectionConfig.database || '';
         const result = await this.executeQuery(`
             SELECT 
                 tc.constraint_name as name,
@@ -297,11 +312,11 @@ export class MySQLConnector implements IDatabaseConnector {
         }));
     }
 
-    async getTableDetails(tableName: string, schema?: string): Promise<TableDetails> {
+    async getTableDetails(tableName: string, schema?: string, database?: string): Promise<TableDetails> {
         const [columns, indexes, constraints] = await Promise.all([
-            this.getColumns(tableName, schema),
-            this.getIndexes(tableName, schema),
-            this.getConstraints(tableName, schema)
+            this.getColumns(tableName, schema, database),
+            this.getIndexes(tableName, schema, database),
+            this.getConstraints(tableName, schema, database)
         ]);
 
         return {

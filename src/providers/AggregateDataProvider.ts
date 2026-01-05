@@ -65,7 +65,7 @@ export class AggregateDataProvider {
             return;
         }
 
-        const columns = await connector.getColumns(tableName, schema);
+        const columns = await connector.getColumns(tableName, schema, database);
         const availableColumns = columns.map(c => c.name);
 
         const limit = 100;
@@ -291,6 +291,15 @@ export class AggregateDataProvider {
 
     private async runQuery(dbType: DatabaseType, connector: IDatabaseConnector, state: AggregateState): Promise<QueryResult> {
         const sql = this.buildQuery(dbType, state);
+        
+        // For PostgreSQL, we need to ensure we're connected to the correct database
+        // before executing the query. Use the connector's native support for database switching.
+        if (dbType === DatabaseType.PostgreSQL && state.database && typeof (connector as any).withDatabase === 'function') {
+            return await (connector as any).withDatabase(state.database, async () => {
+                return await connector.executeQuery(sql);
+            });
+        }
+        
         return await connector.executeQuery(sql);
     }
 

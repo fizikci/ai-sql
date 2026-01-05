@@ -194,7 +194,7 @@ export class ViewDataProvider {
         tableName: string,
         connector: IDatabaseConnector
     ): Promise<Column[]> {
-        const cols = await connector.getColumns(tableName, schema);
+        const cols = await connector.getColumns(tableName, schema, database);
         const tableMeta = await this.metadataStorage.getTableMetadata(connectionId, database, schema, tableName);
         const fields = tableMeta?.fields ?? {};
 
@@ -211,6 +211,15 @@ export class ViewDataProvider {
 
     private async runQuery(dbType: DatabaseType, connector: IDatabaseConnector, state: ViewState): Promise<QueryResult> {
         const sql = this.buildQuery(dbType, state);
+        
+        // For PostgreSQL, we need to ensure we're connected to the correct database
+        // before executing the query. Use the connector's native support for database switching.
+        if (dbType === DatabaseType.PostgreSQL && state.database && typeof (connector as any).withDatabase === 'function') {
+            return await (connector as any).withDatabase(state.database, async () => {
+                return await connector.executeQuery(sql);
+            });
+        }
+        
         return await connector.executeQuery(sql);
     }
 

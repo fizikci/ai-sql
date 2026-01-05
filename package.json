@@ -2,7 +2,7 @@
   "name": "ai-sql",
   "displayName": "SQL with AI",
   "description": "SQL Client for SQL Server, PostgreSQL, and MySQL powered with AI capabilities",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publisher": "bulentkeskin",
   "icon": "resources/icon.png",
   "repository": {

@@ -127,8 +127,14 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
         connectionType: DatabaseType | undefined,
         database: string | undefined,
         schema: string | undefined,
-        tableName: string
+        tableName: string,
+        contextSchema?: string
     ): string {
+        // If we're in a schema context (tree shows schema as parent), just show the table name
+        if (contextSchema && schema === contextSchema) {
+            return tableName;
+        }
+
         // SQL Server: hide the default schema prefix (dbo.)
         if (connectionType === DatabaseType.MSSQL && schema?.toLowerCase() === 'dbo') {
             return tableName;
@@ -163,7 +169,10 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
             case 'databases':
                 return this.getDatabases(element);
             case 'database':
-                // Database level: show object categories for the selected database.
+                // Database level: show schemas for this database
+                return this.getSchemas(element);
+            case 'schema':
+                // Schema level: show object categories for the selected schema
                 return this.getDatabaseObjectCategories(element);
             case 'tables':
                 return this.getTables(element);
@@ -224,8 +233,8 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
     }
 
     private getDatabaseObjectCategories(element: TreeNode): TreeNode[] {
-        // Defensive: if for some reason we don't have a database name, don't show object categories.
-        if (!element.database) {
+        // Defensive: if for some reason we don't have a database or schema name, don't show object categories.
+        if (!element.database || !element.schema) {
             return [];
         }
 
@@ -236,7 +245,7 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
                 'tables',
                 element.connectionId,
                 element.database,
-                undefined,
+                element.schema,
                 undefined,
                 new vscode.ThemeIcon('table')
             ),
@@ -246,7 +255,7 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
                 'views',
                 element.connectionId,
                 element.database,
-                undefined,
+                element.schema,
                 undefined,
                 new vscode.ThemeIcon('eye')
             ),
@@ -256,7 +265,7 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
                 'procedures',
                 element.connectionId,
                 element.database,
-                undefined,
+                element.schema,
                 undefined,
                 new vscode.ThemeIcon('symbol-method')
             ),
@@ -266,7 +275,7 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
                 'functions',
                 element.connectionId,
                 element.database,
-                undefined,
+                element.schema,
                 undefined,
                 new vscode.ThemeIcon('symbol-function')
             )
@@ -306,6 +315,36 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
         }
     }
 
+    private async getSchemas(element: TreeNode): Promise<TreeNode[]> {
+        if (!element.connectionId || !element.database) {
+            return [];
+        }
+
+        const connector = this.connectionManager.getConnection(element.connectionId);
+        if (!connector) {
+            return [];
+        }
+
+        try {
+            const schemas = await connector.getSchemas(element.database);
+            return schemas.map(schema => 
+                new TreeNode(
+                    schema,
+                    vscode.TreeItemCollapsibleState.Collapsed,
+                    'schema',
+                    element.connectionId,
+                    element.database,
+                    schema,
+                    undefined,
+                    new vscode.ThemeIcon('file-directory')
+                )
+            );
+        } catch (error) {
+            vscode.window.showErrorMessage(`Failed to load schemas: ${error}`);
+            return [];
+        }
+    }
+
     private async getTables(element: TreeNode): Promise<TreeNode[]> {
         if (!element.connectionId) {
             return [];
@@ -318,7 +357,7 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
 
         try {
             const connectionType = await this.getConnectionType(element.connectionId);
-            const tables = await connector.getTables(element.database);
+            const tables = await connector.getTables(element.database, element.schema);
 
             // Always show: Tables => GroupName => tables. Default group: Others.
             // Read metadata once to avoid many filesystem reads.
@@ -348,7 +387,7 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
                 'tableGroup',
                 element.connectionId,
                 element.database,
-                undefined,
+                element.schema,
                 groupName,
                 new vscode.ThemeIcon('folder')
             ));
@@ -370,7 +409,7 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
 
         try {
             const connectionType = await this.getConnectionType(element.connectionId);
-            const tables = await connector.getTables(element.database);
+            const tables = await connector.getTables(element.database, element.schema);
 
             const groupName = (element.objectName ?? 'Others').trim() || 'Others';
 
@@ -398,7 +437,7 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
 
             return await Promise.all(filtered.map(async (t) => {
                 const meta = await this.metadataStorage.getTableMetadata(element.connectionId!, element.database, t.schema, t.name);
-                const label = this.formatTableLabel(connectionType, element.database, t.schema, t.name);
+                const label = this.formatTableLabel(connectionType, element.database, t.schema, t.name, element.schema);
                 const tooltip = meta?.definition ? `${label}\n${meta.definition}` : label;
                 return new TreeNode(
                     label,
@@ -429,10 +468,13 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
         }
 
         try {
-            const views = await connector.getViews(element.database);
-            return views.map(view => 
-                new TreeNode(
-                    view.schema ? `${view.schema}.${view.name}` : view.name,
+            const views = await connector.getViews(element.database, element.schema);
+            const connectionType = await this.getConnectionType(element.connectionId);
+            return views.map(view => {
+                // Show just the name if it's in the same schema we're browsing
+                const displayName = (view.schema === element.schema) ? view.name : (view.schema ? `${view.schema}.${view.name}` : view.name);
+                return new TreeNode(
+                    displayName,
                     vscode.TreeItemCollapsibleState.None,
                     'view',
                     element.connectionId,
@@ -440,8 +482,8 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
                     view.schema,
                     view.name,
                     new vscode.ThemeIcon('eye')
-                )
-            );
+                );
+            });
         } catch (error) {
             vscode.window.showErrorMessage(`Failed to load views: ${error}`);
             return [];
@@ -459,10 +501,11 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
         }
 
         try {
-            const procedures = await connector.getProcedures(element.database);
-            return procedures.map(proc => 
-                new TreeNode(
-                    proc.schema ? `${proc.schema}.${proc.name}` : proc.name,
+            const procedures = await connector.getProcedures(element.database, element.schema);
+            return procedures.map(proc => {
+                const displayName = (proc.schema === element.schema) ? proc.name : (proc.schema ? `${proc.schema}.${proc.name}` : proc.name);
+                return new TreeNode(
+                    displayName,
                     vscode.TreeItemCollapsibleState.None,
                     'procedure',
                     element.connectionId,
@@ -470,8 +513,8 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
                     proc.schema,
                     proc.name,
                     new vscode.ThemeIcon('symbol-method')
-                )
-            );
+                );
+            });
         } catch (error) {
             vscode.window.showErrorMessage(`Failed to load procedures: ${error}`);
             return [];
@@ -489,10 +532,11 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
         }
 
         try {
-            const functions = await connector.getFunctions(element.database);
-            return functions.map(func => 
-                new TreeNode(
-                    func.schema ? `${func.schema}.${func.name}` : func.name,
+            const functions = await connector.getFunctions(element.database, element.schema);
+            return functions.map(func => {
+                const displayName = (func.schema === element.schema) ? func.name : (func.schema ? `${func.schema}.${func.name}` : func.name);
+                return new TreeNode(
+                    displayName,
                     vscode.TreeItemCollapsibleState.None,
                     'function',
                     element.connectionId,
@@ -500,8 +544,8 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
                     func.schema,
                     func.name,
                     new vscode.ThemeIcon('symbol-function')
-                )
-            );
+                );
+            });
         } catch (error) {
             vscode.window.showErrorMessage(`Failed to load functions: ${error}`);
             return [];
@@ -554,7 +598,7 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
         }
 
         try {
-            const columns = await connector.getColumns(element.objectName, element.schema);
+            const columns = await connector.getColumns(element.objectName, element.schema, element.database);
 
             const tableMeta = await this.metadataStorage.getTableMetadata(
                 element.connectionId,
@@ -601,7 +645,7 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
         }
 
         try {
-            const indexes = await connector.getIndexes(element.objectName, element.schema);
+            const indexes = await connector.getIndexes(element.objectName, element.schema, element.database);
             return indexes.map(idx => {
                 const label = `${idx.name} (${idx.columns.join(', ')})${idx.isUnique ? ' UNIQUE' : ''}`;
                 return new TreeNode(
@@ -632,7 +676,7 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
         }
 
         try {
-            const constraints = await connector.getConstraints(element.objectName, element.schema);
+            const constraints = await connector.getConstraints(element.objectName, element.schema, element.database);
             return constraints.map(con => {
                 const label = `${con.name} (${con.type})`;
                 return new TreeNode(
