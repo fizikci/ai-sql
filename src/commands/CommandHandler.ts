@@ -128,19 +128,26 @@ export class CommandHandler {
         const port = parseInt(portInput, 10);
 
         const username = await vscode.window.showInputBox({
-            prompt: 'Username',
-            placeHolder: 'sa'
+            prompt: 'Username (leave empty for trusted connection on SQL Server)',
+            placeHolder: selectedType.value === DatabaseType.MSSQL ? 'Leave empty for Windows Auth' : 'sa'
         });
-        if (!username) {
+        if (username === undefined) {
             return;
         }
 
-        const password = await vscode.window.showInputBox({
-            prompt: 'Password',
-            password: true
-        });
-        if (password === undefined) {
-            return;
+        // Allow empty username for SQL Server trusted connections
+        const requiresAuth = username.trim() !== '' || selectedType.value !== DatabaseType.MSSQL;
+        let password = '';
+        
+        if (requiresAuth) {
+            const passwordInput = await vscode.window.showInputBox({
+                prompt: 'Password',
+                password: true
+            });
+            if (passwordInput === undefined) {
+                return;
+            }
+            password = passwordInput;
         }
 
         const database = await vscode.window.showInputBox({

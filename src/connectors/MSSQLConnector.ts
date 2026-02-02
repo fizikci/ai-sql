@@ -7,17 +7,36 @@ export class MSSQLConnector implements IDatabaseConnector {
     private config: sql.config;
 
     constructor(private connectionConfig: ConnectionConfig) {
-        this.config = {
-            server: connectionConfig.host,
-            port: connectionConfig.port,
-            user: connectionConfig.username,
-            password: connectionConfig.password,
-            database: connectionConfig.database,
-            options: {
-                encrypt: true, // Always use encryption (required for Azure SQL)
-                trustServerCertificate: true // Trust self-signed certificates
-            }
-        };
+        // Use Windows Authentication (trusted connection) if username is empty
+        const useTrustedConnection = !connectionConfig.username || connectionConfig.username.trim() === '';
+        
+        if (useTrustedConnection) {
+            this.config = {
+                server: connectionConfig.host,
+                port: connectionConfig.port,
+                database: connectionConfig.database,
+                options: {
+                    encrypt: true, // Always use encryption (required for Azure SQL)
+                    trustServerCertificate: true, // Trust self-signed certificates
+                    trustedConnection: true // Use Windows Authentication
+                },
+                authentication: {
+                    type: 'ntlm' as any // Windows Authentication
+                }
+            };
+        } else {
+            this.config = {
+                server: connectionConfig.host,
+                port: connectionConfig.port,
+                user: connectionConfig.username,
+                password: connectionConfig.password,
+                database: connectionConfig.database,
+                options: {
+                    encrypt: true, // Always use encryption (required for Azure SQL)
+                    trustServerCertificate: true // Trust self-signed certificates
+                }
+            };
+        }
     }
 
     async connect(): Promise<void> {
