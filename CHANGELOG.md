@@ -2,6 +2,13 @@
 
 All notable changes to the "SQL with AI" extension will be documented in this file.
 
+## [0.1.6] - 2026-02-02
+
+### Added
+- SQL Server trusted connection support (Windows Authentication)
+- Option to leave username/password empty for SQL Server to use Windows credentials
+- NTLM authentication configuration for trusted connections
+
 ## [0.1.5] - 2026-01-04
 
 ### Added
