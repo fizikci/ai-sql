@@ -21,7 +21,12 @@ export class MSSQLConnector implements IDatabaseConnector {
                     trustedConnection: true // Use Windows Authentication
                 },
                 authentication: {
-                    type: 'ntlm' as any // Windows Authentication
+                    type: 'ntlm',
+                    options: {
+                        domain: '', // Empty domain for local machine
+                        userName: '',
+                        password: ''
+                    }
                 }
             };
         } else {
