@@ -15,6 +15,7 @@ type ViewState = {
 
     availableColumns: string[];
     selectedColumns: string[];
+    primaryKeyColumns: string[];
 
     limit: number;
 
@@ -55,6 +56,7 @@ export class ViewDataProvider {
 
         const columns = await this.getColumnsWithMetadata(connectionId, database, schema, tableName, connector);
         const availableColumns = columns.map(c => c.name);
+        const primaryKeyColumns = columns.filter(c => c.isPrimaryKey).map(c => c.name);
 
         const viewColumns = columns.filter(c => c.viewInList === true).map(c => c.name);
         const selectedColumns = viewColumns.length ? viewColumns : availableColumns;
@@ -68,6 +70,7 @@ export class ViewDataProvider {
             tableName,
             availableColumns,
             selectedColumns,
+            primaryKeyColumns,
             limit,
             sortDirection: 'none'
         };
@@ -100,6 +103,11 @@ export class ViewDataProvider {
 
                 if (msg.type === 'refresh') {
                     await this.handleRefreshMessage(storedConn.type, connector, msg.payload);
+                    return;
+                }
+
+                if (msg.type === 'deleteRow') {
+                    await this.handleDeleteRowMessage(storedConn.type, connector, msg.payload);
                 }
             }, null, this.context.subscriptions);
         }
@@ -126,6 +134,41 @@ export class ViewDataProvider {
                     state: next,
                     result,
                     query: this.buildQuery(dbType, next)
+                }
+            });
+        } catch (e: any) {
+            this.panel.webview.postMessage({
+                type: 'error',
+                payload: { message: e?.message ?? String(e) }
+            });
+        }
+    }
+
+    private async handleDeleteRowMessage(dbType: DatabaseType, connector: IDatabaseConnector, payload: any): Promise<void> {
+        if (!this.panel || !this.state) {
+            return;
+        }
+
+        try {
+            const confirm = await vscode.window.showWarningMessage(
+                'Delete this row? This action cannot be undone.',
+                { modal: true },
+                'Delete'
+            );
+            if (confirm !== 'Delete') {
+                return;
+            }
+
+            const deleteSql = this.buildDeleteQuery(dbType, this.state, payload?.pkValues);
+            await this.executeSql(dbType, connector, this.state, deleteSql);
+
+            const result = await this.runQuery(dbType, connector, this.state);
+            this.panel.webview.postMessage({
+                type: 'data',
+                payload: {
+                    state: this.state,
+                    result,
+                    query: this.buildQuery(dbType, this.state)
                 }
             });
         } catch (e: any) {
@@ -211,6 +254,10 @@ export class ViewDataProvider {
 
     private async runQuery(dbType: DatabaseType, connector: IDatabaseConnector, state: ViewState): Promise<QueryResult> {
         const sql = this.buildQuery(dbType, state);
+        return await this.executeSql(dbType, connector, state, sql);
+    }
+
+    private async executeSql(dbType: DatabaseType, connector: IDatabaseConnector, state: ViewState, sql: string): Promise<QueryResult> {
         
         // For PostgreSQL, we need to ensure we're connected to the correct database
         // before executing the query. Use the connector's native support for database switching.
@@ -248,6 +295,63 @@ export class ViewDataProvider {
             return v;
         }
         return this.sqlStringLiteral(v);
+    }
+
+    private sqlValueLiteral(dbType: DatabaseType, value: any): string {
+        if (value === null || value === undefined) {
+            return 'NULL';
+        }
+
+        if (typeof value === 'number') {
+            if (!Number.isFinite(value)) {
+                throw new Error('Unsupported numeric value in primary key');
+            }
+            return String(value);
+        }
+
+        if (typeof value === 'boolean') {
+            if (dbType === DatabaseType.PostgreSQL) {
+                return value ? 'TRUE' : 'FALSE';
+            }
+            return value ? '1' : '0';
+        }
+
+        if (value instanceof Date) {
+            return this.sqlStringLiteral(value.toISOString());
+        }
+
+        return this.sqlStringLiteral(String(value));
+    }
+
+    private buildDeleteQuery(dbType: DatabaseType, state: ViewState, pkValues: Record<string, any> | undefined): string {
+        if (!state.primaryKeyColumns.length) {
+            throw new Error('Cannot delete row: table has no primary key.');
+        }
+
+        if (!pkValues || typeof pkValues !== 'object') {
+            throw new Error('Cannot delete row: missing primary key values.');
+        }
+
+        const fromTarget = state.schema
+            ? `${this.quoteIdentifier(dbType, state.schema)}.${this.quoteIdentifier(dbType, state.tableName)}`
+            : this.quoteIdentifier(dbType, state.tableName);
+
+        const whereClauses: string[] = [];
+        for (const pkCol of state.primaryKeyColumns) {
+            if (!(pkCol in pkValues)) {
+                throw new Error(`Cannot delete row: missing primary key column "${pkCol}" in selected columns.`);
+            }
+
+            const value = pkValues[pkCol];
+            const qCol = this.quoteIdentifier(dbType, pkCol);
+            if (value === null || value === undefined) {
+                whereClauses.push(`${qCol} IS NULL`);
+            } else {
+                whereClauses.push(`${qCol} = ${this.sqlValueLiteral(dbType, value)}`);
+            }
+        }
+
+        return `DELETE FROM ${fromTarget} WHERE ${whereClauses.join(' AND ')}`;
     }
 
     private buildQuery(dbType: DatabaseType, state: ViewState): string {
@@ -391,6 +495,28 @@ export class ViewDataProvider {
             color: var(--vscode-editorWarning-foreground);
             font-style: italic;
         }
+        .pk-cell {
+            white-space: nowrap;
+        }
+        .pk-cell-inner {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .delete-row-btn {
+            opacity: 0;
+            background: transparent;
+            border: none;
+            color: var(--vscode-icon-foreground);
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+            font-size: 14px;
+        }
+        tr:hover .delete-row-btn,
+        .delete-row-btn:focus {
+            opacity: 1;
+        }
         .error {
             color: var(--vscode-errorForeground);
             margin-top: 8px;
@@ -498,6 +624,8 @@ export class ViewDataProvider {
 
             const columns = result.columns || [];
             const rows = result.rows || [];
+            const primaryKeyColumns = state.primaryKeyColumns || [];
+            const primaryKeyDisplayColumn = columns.find(c => primaryKeyColumns.includes(c)) || null;
 
             if (!rows.length) {
                 document.getElementById('tableWrap').innerHTML = '<p>No rows returned</p>';
@@ -550,7 +678,52 @@ export class ViewDataProvider {
                 for (const c of columns) {
                     const td = document.createElement('td');
                     const v = r[c];
-                    if (v === null || v === undefined) {
+
+                    if (c === primaryKeyDisplayColumn) {
+                        td.classList.add('pk-cell');
+
+                        const inner = document.createElement('span');
+                        inner.className = 'pk-cell-inner';
+
+                        const valueEl = document.createElement('span');
+                        if (v === null || v === undefined) {
+                            valueEl.className = 'null-value';
+                            valueEl.textContent = 'NULL';
+                        } else {
+                            valueEl.textContent = String(v);
+                        }
+                        inner.appendChild(valueEl);
+
+                        const deleteBtn = document.createElement('button');
+                        deleteBtn.type = 'button';
+                        deleteBtn.className = 'delete-row-btn';
+                        deleteBtn.title = 'Delete row';
+                        deleteBtn.textContent = '🗑';
+                        deleteBtn.addEventListener('click', (event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+
+                            const missingPk = primaryKeyColumns.find(pk => !(pk in r));
+                            if (missingPk) {
+                                document.getElementById('error').textContent = 'Cannot delete row: include all primary key columns in selected columns.';
+                                return;
+                            }
+
+                            const pkValues = {};
+                            for (const pk of primaryKeyColumns) {
+                                pkValues[pk] = r[pk];
+                            }
+
+                            document.getElementById('error').textContent = '';
+                            vscode.postMessage({
+                                type: 'deleteRow',
+                                payload: { pkValues }
+                            });
+                        });
+                        inner.appendChild(deleteBtn);
+
+                        td.appendChild(inner);
+                    } else if (v === null || v === undefined) {
                         td.className = 'null-value';
                         td.textContent = 'NULL';
                     } else {

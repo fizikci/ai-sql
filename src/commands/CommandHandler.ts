@@ -72,7 +72,8 @@ export class CommandHandler {
         const groupName = await vscode.window.showInputBox({
             prompt: 'Group name for this table (default: Others)',
             value: current || 'Others',
-            placeHolder: 'Others'
+            placeHolder: 'Others',
+            ignoreFocusOut: true
         });
 
         if (groupName === undefined) {
@@ -90,7 +91,7 @@ export class CommandHandler {
     async addConnection(): Promise<void> {
         const name = await vscode.window.showInputBox({
             prompt: 'Connection name',
-            placeHolder: 'My Database'
+            ignoreFocusOut: true
         });
         if (!name) {
             return;
@@ -103,7 +104,8 @@ export class CommandHandler {
         ];
 
         const selectedType = await vscode.window.showQuickPick(typeOptions, {
-            placeHolder: 'Select database type'
+            placeHolder: 'Select database type',
+            ignoreFocusOut: true
         });
         if (!selectedType) {
             return;
@@ -111,7 +113,8 @@ export class CommandHandler {
 
         const host = await vscode.window.showInputBox({
             prompt: 'Host',
-            placeHolder: 'localhost'
+            ignoreFocusOut: true,
+            value: 'localhost'
         });
         if (!host) {
             return;
@@ -120,7 +123,8 @@ export class CommandHandler {
         const defaultPort = this.getDefaultPort(selectedType.value);
         const portInput = await vscode.window.showInputBox({
             prompt: 'Port',
-            value: defaultPort.toString()
+            value: defaultPort.toString(),
+            ignoreFocusOut: true
         });
         if (!portInput) {
             return;
@@ -128,8 +132,8 @@ export class CommandHandler {
         const port = parseInt(portInput, 10);
 
         const username = await vscode.window.showInputBox({
-            prompt: 'Username (leave empty for trusted connection on SQL Server)',
-            placeHolder: selectedType.value === DatabaseType.MSSQL ? 'Leave empty for Windows Auth' : 'sa'
+            prompt: 'Username' + (selectedType.value === DatabaseType.MSSQL ? ' (leave empty for trusted connection)' : ''),
+            ignoreFocusOut: true
         });
         if (username === undefined) {
             return;
@@ -142,7 +146,8 @@ export class CommandHandler {
         if (requiresAuth) {
             const passwordInput = await vscode.window.showInputBox({
                 prompt: 'Password',
-                password: true
+                password: true,
+                ignoreFocusOut: true
             });
             if (passwordInput === undefined) {
                 return;
@@ -152,7 +157,8 @@ export class CommandHandler {
 
         const database = await vscode.window.showInputBox({
             prompt: 'Database (optional)',
-            placeHolder: 'Leave empty to see all databases'
+            placeHolder: 'Leave empty to see all databases',
+            ignoreFocusOut: true
         });
 
         const connection: ConnectionConfig = {
@@ -202,16 +208,121 @@ export class CommandHandler {
             return;
         }
 
-        // Simple edit - just update name for now
         const name = await vscode.window.showInputBox({
             prompt: 'Connection name',
-            value: connection.name
+            value: connection.name,
+            ignoreFocusOut: true
         });
+        if (name === undefined) {
+            return;
+        }
 
-        if (name && name !== connection.name) {
-            connection.name = name;
-            await this.connectionStorage.saveConnection(connection);
+        const typeLabels: Record<DatabaseType, string> = {
+            [DatabaseType.MSSQL]: 'SQL Server',
+            [DatabaseType.PostgreSQL]: 'PostgreSQL',
+            [DatabaseType.MySQL]: 'MySQL'
+        };
+        const typeOptions = [
+            { label: 'SQL Server', value: DatabaseType.MSSQL },
+            { label: 'PostgreSQL', value: DatabaseType.PostgreSQL },
+            { label: 'MySQL', value: DatabaseType.MySQL }
+        ];
+        // Put current type first so it is visually highlighted
+        typeOptions.sort((a, b) => (b.value === connection.type ? 1 : 0) - (a.value === connection.type ? 1 : 0));
+
+        const selectedType = await vscode.window.showQuickPick(typeOptions, {
+            placeHolder: `Database type (current: ${typeLabels[connection.type]})`,
+            ignoreFocusOut: true
+        });
+        if (!selectedType) {
+            return;
+        }
+
+        const host = await vscode.window.showInputBox({
+            prompt: 'Host',
+            value: connection.host,
+            ignoreFocusOut: true
+        });
+        if (host === undefined) {
+            return;
+        }
+
+        const portInput = await vscode.window.showInputBox({
+            prompt: 'Port',
+            value: connection.port.toString(),
+            ignoreFocusOut: true
+        });
+        if (portInput === undefined) {
+            return;
+        }
+        const port = parseInt(portInput, 10) || connection.port;
+
+        const username = await vscode.window.showInputBox({
+            prompt: 'Username' + (selectedType.value === DatabaseType.MSSQL ? ' (leave empty for trusted connection)' : ''),
+            value: connection.username,
+            ignoreFocusOut: true
+        });
+        if (username === undefined) {
+            return;
+        }
+
+        const requiresAuth = username.trim() !== '' || selectedType.value !== DatabaseType.MSSQL;
+        let password = connection.password;
+        if (requiresAuth) {
+            const passwordInput = await vscode.window.showInputBox({
+                prompt: 'Password (press Enter to keep current)',
+                value: connection.password,
+                password: true,
+                ignoreFocusOut: true
+            });
+            if (passwordInput === undefined) {
+                return;
+            }
+            password = passwordInput;
+        }
+
+        const database = await vscode.window.showInputBox({
+            prompt: 'Database (optional, leave empty to see all databases)',
+            value: connection.database ?? '',
+            ignoreFocusOut: true
+        });
+        if (database === undefined) {
+            return;
+        }
+
+        const updated: ConnectionConfig = {
+            ...connection,
+            name: name || connection.name,
+            type: selectedType.value,
+            host: host || connection.host,
+            port,
+            username,
+            password,
+            database: database.trim() || undefined
+        };
+
+        // Test the updated connection before saving
+        try {
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: 'Testing connection...',
+                cancellable: false
+            }, async () => {
+                return await this.connectionManager.testConnection(updated);
+            });
+
+            // Disconnect if currently connected so the new settings are picked up
+            if (this.connectionManager.isConnected(connection.id)) {
+                await this.connectionManager.disconnect(connection.id);
+            }
+
+            await this.connectionStorage.saveConnection(updated);
             this.explorerProvider.refresh();
+            vscode.window.showInformationMessage('Connection updated successfully!');
+        } catch (error: any) {
+            const errorMessage = error?.message || String(error);
+            vscode.window.showErrorMessage(`Connection failed: ${errorMessage}`);
+            console.error('Connection error details:', error);
         }
     }
 
@@ -535,7 +646,8 @@ ORDER BY
 
         const newName = await vscode.window.showInputBox({
             prompt: `New name for table "${node.objectName}"`,
-            value: node.objectName
+            value: node.objectName,
+            ignoreFocusOut: true
         });
 
         if (!newName || newName.trim() === node.objectName) {
@@ -585,7 +697,8 @@ ORDER BY
 
         const newName = await vscode.window.showInputBox({
             prompt: `New name for view "${node.objectName}"`,
-            value: node.objectName
+            value: node.objectName,
+            ignoreFocusOut: true
         });
 
         if (!newName || newName.trim() === node.objectName) {
@@ -635,7 +748,8 @@ ORDER BY
 
         const newName = await vscode.window.showInputBox({
             prompt: `New name for column "${node.objectName}"`,
-            value: node.objectName
+            value: node.objectName,
+            ignoreFocusOut: true
         });
 
         if (!newName || newName.trim() === node.objectName) {

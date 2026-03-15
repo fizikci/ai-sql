@@ -2,6 +2,15 @@
 
 All notable changes to the "SQL with AI" extension will be documented in this file.
 
+## [0.1.7] - 2026-03-07
+
+### Added
+- Row-level delete action in View Data with a hover delete icon next to primary key values
+- Primary-key-based deletion flow from the data grid with automatic data refresh after deletion
+
+### Changed
+- Row deletion confirmation now uses a native VS Code modal prompt (instead of webview `window.confirm`)
+
 ## [0.1.6] - 2026-02-02
 
 ### Added
