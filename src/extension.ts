@@ -20,7 +20,7 @@ export function activate(context: vscode.ExtensionContext) {
 	// Initialize services
 	const connectionStorage = new ConnectionStorage(context);
 	const connectionManager = ConnectionManager.getInstance();
-	const explorerProvider = new SqlExplorerProvider(connectionStorage, connectionManager);
+	const explorerProvider = new SqlExplorerProvider(connectionStorage, connectionManager, context.extensionUri);
 	const queryResultProvider = new QueryResultProvider(context);
 	const viewDataProvider = new ViewDataProvider(context, connectionStorage, connectionManager);
 	const aggregateDataProvider = new AggregateDataProvider(context, connectionStorage, connectionManager);

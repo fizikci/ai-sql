@@ -89,14 +89,6 @@ export class CommandHandler {
     }
 
     async addConnection(): Promise<void> {
-        const name = await vscode.window.showInputBox({
-            prompt: 'Connection name',
-            ignoreFocusOut: true
-        });
-        if (!name) {
-            return;
-        }
-
         const typeOptions = [
             { label: 'SQL Server', value: DatabaseType.MSSQL },
             { label: 'PostgreSQL', value: DatabaseType.PostgreSQL },
@@ -156,10 +148,15 @@ export class CommandHandler {
         }
 
         const database = await vscode.window.showInputBox({
-            prompt: 'Database (optional)',
-            placeHolder: 'Leave empty to see all databases',
+            prompt: 'Database name',
+            placeHolder: 'e.g. my_database',
             ignoreFocusOut: true
         });
+        if (!database || !database.trim()) {
+            return;
+        }
+
+        const name = `${database.trim()} on ${host}`;
 
         const connection: ConnectionConfig = {
             id: Date.now().toString(),
@@ -169,7 +166,7 @@ export class CommandHandler {
             port,
             username,
             password,
-            database: database || undefined,
+            database: database.trim(),
             ssl: false
         };
 
@@ -205,15 +202,6 @@ export class CommandHandler {
 
         const connection = await this.connectionStorage.getConnection(node.connectionId);
         if (!connection) {
-            return;
-        }
-
-        const name = await vscode.window.showInputBox({
-            prompt: 'Connection name',
-            value: connection.name,
-            ignoreFocusOut: true
-        });
-        if (name === undefined) {
             return;
         }
 
@@ -282,23 +270,26 @@ export class CommandHandler {
         }
 
         const database = await vscode.window.showInputBox({
-            prompt: 'Database (optional, leave empty to see all databases)',
+            prompt: 'Database name',
             value: connection.database ?? '',
+            placeHolder: 'e.g. my_database',
             ignoreFocusOut: true
         });
-        if (database === undefined) {
+        if (!database || !database.trim()) {
             return;
         }
 
+        const name = `${database.trim()} on ${host || connection.host}`;
+
         const updated: ConnectionConfig = {
             ...connection,
-            name: name || connection.name,
+            name,
             type: selectedType.value,
             host: host || connection.host,
             port,
             username,
             password,
-            database: database.trim() || undefined
+            database: database.trim()
         };
 
         // Test the updated connection before saving

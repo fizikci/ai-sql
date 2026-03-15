@@ -2,6 +2,19 @@
 
 All notable changes to the "SQL with AI" extension will be documented in this file.
 
+## [0.1.8] - 2026-03-15
+
+### Added
+- Database-specific SVG icons for connections (Windows squares for SQL Server, elephant for PostgreSQL, dolphin for MySQL)
+
+### Changed
+- Database is now required when adding or editing a connection — "leave empty to see all databases" option removed
+- Connection display name is auto-derived as `{database} on {host}` instead of a user-supplied name
+- Backward-compatible: existing connections without a stored database fall back to showing host only
+- Removed intermediate "Databases" and database name nodes from the tree — expanding a connection now shows schemas directly
+- Tables node skips the "Others" group folder when all tables are ungrouped; tables are rendered flat in that case
+- When custom groups exist, "Others" is placed last (after custom groups sorted A–Z)
+
 ## [0.1.7] - 2026-03-07
 
 ### Added

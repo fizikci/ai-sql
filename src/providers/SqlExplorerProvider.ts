@@ -13,7 +13,7 @@ export class TreeNode extends vscode.TreeItem {
         public readonly database?: string,
         public readonly schema?: string,
         public readonly objectName?: string,
-        iconPath?: vscode.ThemeIcon | { light: vscode.Uri; dark: vscode.Uri },
+        iconPath?: vscode.ThemeIcon | vscode.Uri | { light: vscode.Uri; dark: vscode.Uri },
         tooltipText?: string,
         public readonly tableName?: string
     ) {
@@ -46,7 +46,8 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
 
     constructor(
         private connectionStorage: ConnectionStorage,
-        private connectionManager: ConnectionManager
+        private connectionManager: ConnectionManager,
+        private extensionUri: vscode.Uri
     ) {}
 
     // Drag-and-drop: move tables between groups
@@ -164,12 +165,7 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
 
         switch (element.contextValue) {
             case 'connection':
-                // Connection/server level: only list databases. Other categories require a specific database context.
-                return this.getConnectionCategories(element);
-            case 'databases':
-                return this.getDatabases(element);
-            case 'database':
-                // Database level: show schemas for this database
+                // Connection is the database — expand directly to schemas.
                 return this.getSchemas(element);
             case 'schema':
                 // Schema level: show object categories for the selected schema
@@ -202,34 +198,23 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
         return connections.map(conn => {
             const icon = this.getConnectionIcon(conn.type);
             const isConnected = this.connectionManager.isConnected(conn.id);
-            const label = isConnected ? `● ${conn.name}` : conn.name;
+            // Always derive display name from database+host for clarity.
+            // For backward-compatible connections without a database, fall back to host only.
+            const displayName = conn.database ? `${conn.database} on ${conn.host}` : conn.host;
+            const label = isConnected ? `● ${displayName}` : displayName;
             
             return new TreeNode(
                 label,
                 vscode.TreeItemCollapsibleState.Collapsed,
                 'connection',
                 conn.id,
+                conn.database,
                 undefined,
                 undefined,
-                undefined,
-                icon
+                icon,
+                `${displayName} (${conn.type})`
             );
         });
-    }
-
-    private getConnectionCategories(element: TreeNode): TreeNode[] {
-        return [
-            new TreeNode(
-                'Databases',
-                vscode.TreeItemCollapsibleState.Collapsed,
-                'databases',
-                element.connectionId,
-                undefined,
-                undefined,
-                undefined,
-                new vscode.ThemeIcon('database')
-            )
-        ];
     }
 
     private getDatabaseObjectCategories(element: TreeNode): TreeNode[] {
@@ -282,39 +267,6 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
         ];
     }
 
-    private async getDatabases(element: TreeNode): Promise<TreeNode[]> {
-        if (!element.connectionId) {
-            return [];
-        }
-
-        const connector = this.connectionManager.getConnection(element.connectionId);
-        if (!connector) {
-            console.log('[SqlExplorer] No connector found for:', element.connectionId);
-            return [];
-        }
-
-        try {
-            console.log('[SqlExplorer] Getting databases...');
-            const databases = await connector.getDatabases();
-            console.log('[SqlExplorer] Found databases:', databases);
-            return databases.map(db => 
-                new TreeNode(
-                    db,
-                    vscode.TreeItemCollapsibleState.Collapsed,
-                    'database',
-                    element.connectionId,
-                    db,
-                    undefined,
-                    undefined,
-                    new vscode.ThemeIcon('database')
-                )
-            );
-        } catch (error) {
-            vscode.window.showErrorMessage(`Failed to load databases: ${error}`);
-            return [];
-        }
-    }
-
     private async getSchemas(element: TreeNode): Promise<TreeNode[]> {
         if (!element.connectionId || !element.database) {
             return [];
@@ -359,27 +311,51 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
             const connectionType = await this.getConnectionType(element.connectionId);
             const tables = await connector.getTables(element.database, element.schema);
 
-            // Always show: Tables => GroupName => tables. Default group: Others.
             // Read metadata once to avoid many filesystem reads.
             const file = await this.metadataStorage.read();
             const conn = file.connections?.[element.connectionId] as any;
             const dbMeta = conn?.databases?.[MetadataKeys.dbKey(element.database)] as any;
             const tableMeta = (dbMeta?.tables ?? {}) as Record<string, any>;
 
-            const groups = new Set<string>();
-            groups.add('Others');
-
+            // Collect only custom (non-Others) groups.
+            const customGroups = new Set<string>();
             for (const t of tables) {
                 const key = MetadataKeys.tableKey(t.schema, t.name);
                 const g = String(tableMeta?.[key]?.group ?? '').trim();
-                groups.add(g || 'Others');
+                if (g && g.toLowerCase() !== 'others') {
+                    customGroups.add(g);
+                }
             }
 
-            const groupNames = Array.from(groups).sort((a, b) => {
-                if (a === 'Others') return -1;
-                if (b === 'Others') return 1;
-                return a.localeCompare(b);
-            });
+            // If every table is ungrouped, skip group folders and render tables directly.
+            if (customGroups.size === 0) {
+                const sorted = [...tables].sort((a, b) => {
+                    const as = (a.schema ?? '').toLowerCase();
+                    const bs = (b.schema ?? '').toLowerCase();
+                    if (as !== bs) { return as.localeCompare(bs); }
+                    return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+                });
+                return await Promise.all(sorted.map(async (t) => {
+                    const meta = await this.metadataStorage.getTableMetadata(element.connectionId!, element.database, t.schema, t.name);
+                    const label = this.formatTableLabel(connectionType, element.database, t.schema, t.name, element.schema);
+                    const tooltip = meta?.definition ? `${label}\n${meta.definition}` : label;
+                    return new TreeNode(
+                        label,
+                        vscode.TreeItemCollapsibleState.Collapsed,
+                        'table',
+                        element.connectionId,
+                        element.database,
+                        t.schema,
+                        t.name,
+                        new vscode.ThemeIcon('table'),
+                        tooltip
+                    );
+                }));
+            }
+
+            // There are custom groups — render group folders; custom groups sorted a-z, Others last.
+            const groupNames = Array.from(customGroups).sort((a, b) => a.localeCompare(b));
+            groupNames.push('Others');
 
             return groupNames.map(groupName => new TreeNode(
                 groupName,
@@ -696,14 +672,15 @@ export class SqlExplorerProvider implements vscode.TreeDataProvider<TreeNode>, v
         }
     }
 
-    private getConnectionIcon(type: DatabaseType): vscode.ThemeIcon {
+    private getConnectionIcon(type: DatabaseType): vscode.Uri | vscode.ThemeIcon {
+        const iconFile = (name: string) => vscode.Uri.joinPath(this.extensionUri, 'resources', name);
         switch (type) {
             case DatabaseType.MSSQL:
-                return new vscode.ThemeIcon('server');
+                return iconFile('icon-mssql.svg');
             case DatabaseType.PostgreSQL:
-                return new vscode.ThemeIcon('server-process');
+                return iconFile('icon-postgresql.svg');
             case DatabaseType.MySQL:
-                return new vscode.ThemeIcon('server-environment');
+                return iconFile('icon-mysql.svg');
             default:
                 return new vscode.ThemeIcon('database');
         }

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <!-- Body -->
+  <ellipse cx="7.5" cy="9.5" rx="5.5" ry="3" fill="#00758f" transform="rotate(-15 7.5 9.5)"/>
+  <!-- Head/snout -->
+  <ellipse cx="3" cy="8.5" rx="2.5" ry="1.5" fill="#00758f"/>
+  <!-- Dorsal fin -->
+  <path d="M7 6.5 L10 2 L11 6" fill="#00758f"/>
+  <!-- Tail fin -->
+  <path d="M12.5 8 L15.5 6 L15.5 10 Z" fill="#00758f"/>
+  <!-- Flukes -->
+  <path d="M12.5 10.5 L15 12.5 L13.5 10" fill="#005f73"/>
+  <!-- Eye -->
+  <circle cx="3.5" cy="8" r="0.7" fill="white"/>
+  <circle cx="3.6" cy="8" r="0.35" fill="#003d4d"/>
+</svg>
